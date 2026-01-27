@@ -1,0 +1,43 @@
+name: strategy_workbench
+description: A new Flutter project.
+
+publish_to: 'none'
+
+version: 1.0.0+1
+
+environment:
+  sdk: '>=3.0.0 <4.0.0'
+
+dependencies:
+  flutter:
+    sdk: flutter
+
+  cupertino_icons: ^1.0.6
+  flutter_riverpod: any
+  dio: any
+  hive: any
+  hive_flutter: any
+  sqflite: any
+  fl_chart: any
+  flutter_animate: any
+  intl: any
+  google_mobile_ads: any
+  flutter_local_notifications: any
+  workmanager: any
+  go_router: any
+  logger: any
+  shared_preferences: any
+  path: any
+  path_provider: any
+  json_annotation: any
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  
+  hive_generator: any
+  build_runner: any
+  flutter_lints: ^3.0.0
+
+flutter:
+  uses-material-design: true
