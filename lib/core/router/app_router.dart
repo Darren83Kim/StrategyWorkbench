@@ -1,11 +1,14 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:strategy_workbench/main.dart';
-import 'package:strategy_workbench/shared/widgets/placeholder_screen.dart';
 import 'package:strategy_workbench/shared/widgets/root_layout.dart';
 
-import 'package:strategy_workbench/features/market/presentation/market_screen.dart';
 import 'package:strategy_workbench/features/market/presentation/stock_detail.dart';
+import 'package:strategy_workbench/features/dashboard/presentation/dashboard_screen.dart';
+import 'package:strategy_workbench/core/providers/filter_providers.dart';
+import 'package:strategy_workbench/features/strategy/presentation/filter_creation_screen.dart';
+import 'package:strategy_workbench/features/strategy/presentation/strategy_screen.dart';
+import 'package:strategy_workbench/features/portfolio/presentation/portfolio_screen.dart';
 
 final _rootNavigatorKey = GlobalKey<NavigatorState>();
 final _shellNavigatorKey = GlobalKey<NavigatorState>();
@@ -17,28 +20,29 @@ final appRouter = GoRouter(
     ShellRoute(
       navigatorKey: _shellNavigatorKey,
       builder: (context, state, child) {
-        return RootLayout(child: child);
+        // state.matchedLocation을 직접 전달 → GoRouterState.of(context) 불필요
+        return RootLayout(location: state.matchedLocation, child: child);
       },
       routes: [
         GoRoute(
           path: '/dashboard',
           builder: (context, state) =>
-              const PlaceholderScreen(screenName: 'Dashboard'),
+              const DashboardScreen(),
         ),
         GoRoute(
-          path: '/market',
-          builder: (context, state) =>
-              const MarketScreen(),
+          path: '/filter',
+          builder: (context, state) => FilterCreationScreen(
+            initialFilter: state.extra as SavedFilter?,
+          ),
         ),
         GoRoute(
           path: '/strategy',
-          builder: (context, state) =>
-              const PlaceholderScreen(screenName: 'Strategy'),
+          builder: (context, state) => const StrategyScreen(),
         ),
         GoRoute(
           path: '/portfolio',
           builder: (context, state) =>
-              const PlaceholderScreen(screenName: 'Portfolio'),
+              const PortfolioScreen(),
         ),
       ],
     ),

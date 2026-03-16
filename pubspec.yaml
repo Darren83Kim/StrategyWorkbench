@@ -11,6 +11,8 @@ environment:
 dependencies:
   flutter:
     sdk: flutter
+  flutter_localizations:
+    sdk: flutter
 
   cupertino_icons: ^1.0.6
   flutter_riverpod: any
@@ -18,10 +20,10 @@ dependencies:
   hive: any
   hive_flutter: any
   sqflite: any
-  fl_chart: any
+  fl_chart: ^0.69.2
   flutter_animate: any
   intl: any
-  google_mobile_ads: any
+  # google_mobile_ads: any  # TODO: 광고 연동 시 추가 + AdMob App ID 설정 필요
   flutter_local_notifications: any
   workmanager: any
   go_router: any
@@ -30,6 +32,10 @@ dependencies:
   path: any
   path_provider: any
   json_annotation: any
+  flutter_dotenv: any
+  http: any
+  crypto: any
+  xml: any
 
 dev_dependencies:
   flutter_test:
@@ -41,3 +47,5 @@ dev_dependencies:
 
 flutter:
   uses-material-design: true
+  assets:
+    - .env

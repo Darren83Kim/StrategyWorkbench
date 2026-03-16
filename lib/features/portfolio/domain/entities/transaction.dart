@@ -1,3 +1,4 @@
+// ignore: constant_identifier_names
 enum TransactionType { BUY, SELL }
 
 class Transaction {

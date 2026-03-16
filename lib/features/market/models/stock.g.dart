@@ -13,6 +13,7 @@ Stock _$StockFromJson(Map<String, dynamic> json) => Stock(
       change: (json['change'] as num).toDouble(),
       per: (json['per'] as num?)?.toDouble(),
       roe: (json['roe'] as num?)?.toDouble(),
+      dividendYield: (json['dividendYield'] as num?)?.toDouble(),
     );
 
 Map<String, dynamic> _$StockToJson(Stock instance) => <String, dynamic>{
@@ -22,4 +23,5 @@ Map<String, dynamic> _$StockToJson(Stock instance) => <String, dynamic>{
       'change': instance.change,
       'per': instance.per,
       'roe': instance.roe,
+      'dividendYield': instance.dividendYield,
     };

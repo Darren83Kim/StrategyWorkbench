@@ -55,7 +55,7 @@
 * **Framework:** Flutter  
 * **State:** Riverpod  
 * **Database:** Hive (고속 캐싱), SQLite (거래 이력 관리)  
-* **API:** 한국투자증권(KR), Yahoo Finance/Alpha Vantage(US)  
+* **API:** Finnhub + FMP(US), KRX Open API + DART(KR), 한국투자증권(KR 폴백)
 * **Ads:** Google Mobile Ads (AdMob)
 
 ---
@@ -89,6 +89,54 @@
 
 ---
 
+## **API 전략 변경 이력 (2026-03-09)**
+
+### 변경 사유
+
+프로젝트의 핵심 목표는 **"서버 없이, 사용자가 직접 퀀트 결과를 뽑아 보는 앱"**입니다.
+기존 API 구성(Yahoo Finance + Alpha Vantage)을 검토한 결과, 이 목표에 부적합하다고 판단하여 전면 교체합니다.
+
+### 기존 구성의 문제점
+
+| API | 문제점 |
+|-----|--------|
+| **Yahoo Finance** | 비공식 API로 문서화된 한도 없음. 2024년 하반기부터 Rate Limit 강화(429 에러 빈발), 언제든 차단 가능. 안정적인 서비스 불가 |
+| **Alpha Vantage** | 무료 한도가 **하루 25회**로 대폭 축소(과거 500→100→25). 종목 5개의 PER/ROE/배당만 조회해도 소진. 서버 없는 클라이언트 앱에 치명적 |
+| **한국투자증권** | OAuth 2.0 기반으로 사용자별 키 발급 필수. 보조 소스로는 유효하나 단독 의존 불가 |
+
+### 새로운 API 전략
+
+#### 미국 주식 데이터
+| 우선순위 | API | 무료 한도 | 용도 |
+|---------|-----|----------|------|
+| 1순위 | **Finnhub** | 60회/분 (사실상 무제한) | 실시간 시세 + 펀더멘탈(PER, ROE, 배당) |
+| 2순위 | **FMP (Financial Modeling Prep)** | 250회/일 | 재무비율, 재무제표 보조 |
+| 폴백 | Yahoo Finance (비공식) | 불안정 | 위 2개 실패 시에만 사용 |
+
+#### 한국 주식 데이터
+| 우선순위 | API | 무료 한도 | 용도 |
+|---------|-----|----------|------|
+| 1순위 | **KRX Open API** | 10,000회/일 | 시세, 종목 정보 |
+| 2순위 | **DART (OpenDART)** | 넉넉 (공공데이터) | 재무제표, PER, ROE 등 펀더멘탈 |
+| 폴백 | 한국투자증권 | 사용자 키 등록 시 | 실시간 시세 보조 |
+
+#### 캐싱 전략 (API 호출 최소화)
+```
+앱 실행 → Hive에서 마지막 갱신일(last_update_date) 확인
+  ├─ 오늘 이미 갱신됨 → 로컬 데이터 사용 (API 호출 0회)
+  └─ 하루 이상 경과 → API 배치 호출 1회 → Hive에 저장 → 날짜 갱신
+```
+- 하루 1회 갱신 원칙으로 Finnhub 60회/분 한도 내 수백 종목 처리 가능
+- 네트워크 실패 시 마지막 캐시 데이터로 계속 동작 (Fail-safe)
+
+### 영향 범위
+- `lib/features/strategy/data/repositories/yahoo_stock_repository.dart` → Finnhub Repository로 교체
+- `API_SPECS.md` → Finnhub, KRX, DART 명세 추가, Alpha Vantage 폐기 표기
+- `.env` → Finnhub API Key 추가 필요
+- `HybridStockRepository` → 새 데이터 소스 우선순위 반영
+
+---
+
 ## **Implementation Addendum (Phase4 & Phase5 반영 내용)**
 
 **목적:** Phase4/5에서 구현한 핵심 기술적 결정과 PRD에 새로 반영해야 할 세부사항을 명시합니다.
@@ -115,12 +163,21 @@
 
 ---
 
-## **다음 권장 작업 (우선순위)**
+## **다음 권장 작업 (우선순위) - 2026-03-09 갱신**
 
-- API 명세서 추가: 각 데이터 소스(Yahoo, AlphaVantage, 한국투자 등)에 대해 엔드포인트, 인증, 호출 한도, 샘플 응답을 문서화.
-- 마이그레이션/백업 정책 문서화: Hive/SQLite에 대한 버전별 마이그레이션 절차(스크립트/백업) 추가.
-- 성능 검증: 실제 대규모 종목(예: 10k 레코드)에서 Normalizer와 차트 렌더링 성능 벤치마크 수행.
-- UI 개선: 거래 타임라인 가상화(ListView.builder + itemExtent) 및 차트 애니메이션 최적화.
+### Phase C: API 전략 재설계 및 코드 기반 안정화
+1. **Finnhub API Repository 구현:** Yahoo Finance Repository를 Finnhub 기반으로 교체. PER, ROE, 배당수익률 추출 로직 포함.
+2. **KRX/DART API Repository 구현:** 한국 시세(KRX) + 재무제표(DART) 통합 Repository 구현.
+3. **HybridStockRepository 리팩토링:** 새 데이터 소스 우선순위(Finnhub → FMP → Yahoo 폴백) 반영.
+4. **stock_detail.dart 버그 수정:** Future 타입 오류(Line 19-20) 및 deprecated 경고 해결.
+5. **glass_container.dart deprecated 수정:** `.withOpacity()` → `.withValues()` 변경.
+
+### Phase D: 상태 관리 및 기능 완성
+6. **Riverpod 상태 관리 통합:** StatefulWidget 개별 상태 → Provider 공유 상태로 전환.
+7. **필터 저장 기능:** FilterCreationScreen에서 SharedPreferences/Hive 통합.
+8. **포트폴리오 DB 연동:** PortfolioScreen에서 SQLite 거래 이력 연동.
+9. **마이그레이션/백업 정책 문서화:** Hive/SQLite에 대한 버전별 마이그레이션 절차 추가.
+10. **성능 검증 및 UI 개선:** Normalizer 실적용, 거래 타임라인 가상화, 차트 애니메이션 최적화.
 
 ---
 

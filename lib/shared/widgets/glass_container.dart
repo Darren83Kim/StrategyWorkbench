@@ -20,10 +20,10 @@ class GlassContainer extends StatelessWidget {
         filter: ImageFilter.blur(sigmaX: 15, sigmaY: 15),
         child: Container(
           decoration: BoxDecoration(
-            color: Colors.white.withOpacity(0.1),
+            color: const Color(0x1AFFFFFF), // white 10% opacity
             borderRadius: BorderRadius.circular(borderRadius),
             border: Border.all(
-              color: Colors.white.withOpacity(0.2),
+              color: const Color(0x33FFFFFF), // white 20% opacity
               width: 1.0,
             ),
           ),

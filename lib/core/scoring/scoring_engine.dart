@@ -42,10 +42,20 @@ class ScoringEngine {
       }
     }
 
+    final List<double> validDivValues = [];
+    for (final stock in stocks) {
+      final div = stock.dividendYield;
+      if (div != null && div > 0) {
+        validDivValues.add(div);
+      }
+    }
+
     final minPer = validPerValues.isEmpty ? 0.0 : validPerValues.reduce(min);
     final maxPer = validPerValues.isEmpty ? 0.0 : validPerValues.reduce(max);
     final minRoe = validRoeValues.isEmpty ? 0.0 : validRoeValues.reduce(min);
     final maxRoe = validRoeValues.isEmpty ? 0.0 : validRoeValues.reduce(max);
+    final minDiv = validDivValues.isEmpty ? 0.0 : validDivValues.reduce(min);
+    final maxDiv = validDivValues.isEmpty ? 0.0 : validDivValues.reduce(max);
 
     final List<ScoredStock> scoredStocks = [];
 
@@ -78,6 +88,18 @@ class ScoringEngine {
         }
       }
       normalizedScores['roe'] = roeScore;
+
+      // Dividend: Higher is better. Score is 0 if null or <= 0.
+      double divScore = 0.0;
+      final currentDiv = stock.dividendYield;
+      if (currentDiv != null && currentDiv > 0) {
+        if (maxDiv - minDiv != 0) {
+          divScore = (currentDiv - minDiv) / (maxDiv - minDiv) * 100;
+        } else {
+          divScore = 50.0;
+        }
+      }
+      normalizedScores['dividend'] = divScore;
 
       // --- 3. Weighted Sum ---
       double totalScore = 0.0;

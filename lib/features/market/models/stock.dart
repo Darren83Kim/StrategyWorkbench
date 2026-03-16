@@ -10,6 +10,7 @@ class Stock {
   final double change;
   final double? per;
   final double? roe;
+  final double? dividendYield;
 
   Stock({
     required this.symbol,
@@ -18,6 +19,7 @@ class Stock {
     required this.change,
     this.per,
     this.roe,
+    this.dividendYield,
   });
 
   factory Stock.fromJson(Map<String, dynamic> json) => _$StockFromJson(json);

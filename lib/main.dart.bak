@@ -1,15 +1,11 @@
-import 'dart:async';
-import 'dart:ui' show PlatformDispatcher;
-
 import 'package:strategy_workbench/core/router/app_router.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
-import 'package:flutter_localizations/flutter_localizations.dart';
-import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'package:strategy_workbench/core/network/hive_service.dart';
 import 'package:strategy_workbench/core/services/background_service.dart';
 import 'package:strategy_workbench/core/services/notification_service.dart';
+import 'package:strategy_workbench/features/strategy/data/repositories/mock_stock_repository.dart';
 import 'package:strategy_workbench/features/strategy/data/repositories/hybrid_stock_repository.dart';
 import 'package:strategy_workbench/features/strategy/data/repositories/kor_investment_repository.dart';
 import 'package:strategy_workbench/features/strategy/domain/services/data_sync_service.dart';
@@ -22,95 +18,62 @@ import 'dart:developer' as developer;
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
-  // 전역 예외 핸들러 - 앱 강제 종료 방지 및 원인 로그 기록
-  FlutterError.onError = (FlutterErrorDetails details) {
-    developer.log(
-      'FlutterError: ${details.exception}',
-      name: 'FlutterError',
-      error: details.exception,
-      stackTrace: details.stack,
-    );
-  };
-  PlatformDispatcher.instance.onError = (error, stack) {
-    developer.log(
-      'PlatformError: $error',
-      name: 'PlatformError',
-      error: error,
-      stackTrace: stack,
-    );
-    return true; // true = 처리됨, 앱 종료 방지
-  };
-
   developer.log('main() started', name: 'main');
 
-  // 1. 환경변수 로드 (빠름)
+  // Load environment variables
   try {
     await dotenv.load(fileName: '.env');
-    developer.log('.env loaded', name: 'main');
+    developer.log('.env file loaded successfully', name: 'main');
   } catch (e) {
-    developer.log('Warning: .env load failed: $e', name: 'main');
+    developer.log('Warning: .env file not found or failed to load: $e',
+        name: 'main');
   }
 
-  // 2. Hive 초기화 (runApp 전에 반드시 완료해야 함 - providers가 즉시 사용)
-  final hiveService = HiveService();
   try {
+    developer.log('Initializing HiveService...', name: 'main');
+    final hiveService = HiveService();
     await hiveService.init();
     developer.log('HiveService initialized', name: 'main');
-  } catch (e, st) {
-    developer.log('HiveService init failed: $e', name: 'main', error: e, stackTrace: st);
-  }
 
-  // 3. 앱 즉시 시작 (스플래시 → 대시보드)
-  developer.log('runApp() called', name: 'main');
-  runApp(const ProviderScope(child: MyApp()));
-
-  // 4. 무거운 초기화는 앱 시작 후 백그라운드에서 실행
-  unawaited(_initServicesAsync(hiveService));
-}
-
-/// 앱 렌더링 후 백그라운드 초기화 (UI를 블로킹하지 않음)
-Future<void> _initServicesAsync(HiveService hiveService) async {
-  try {
+    developer.log('Initializing NotificationService...', name: 'main');
     final notificationService = NotificationService();
     await notificationService.init();
     developer.log('NotificationService initialized', name: 'main');
 
+    developer.log('Initializing BackgroundService...', name: 'main');
     final backgroundService = BackgroundService();
     await backgroundService.init();
-    await backgroundService.registerDailyTask();
     developer.log('BackgroundService initialized', name: 'main');
+    await backgroundService.registerDailyTask();
+    developer.log('BackgroundService registered daily task', name: 'main');
 
-    final stockRepository = HybridStockRepository();
+    developer.log('Setting up repositories and data sync...', name: 'main');
+    final stockRepository = MockStockRepository();
     final dataSyncService = DataSyncService(
       hiveService: hiveService,
       stockRepository: stockRepository,
     );
+
+    developer.log('Syncing data if needed...', name: 'main');
     await dataSyncService.syncStocksIfNeeded();
-    developer.log('DataSync complete', name: 'main');
+    developer.log('Data sync complete', name: 'main');
   } catch (e, st) {
-    developer.log('Background init failed: $e', name: 'main', error: e, stackTrace: st);
+    developer.log('App initialization failed: $e', name: 'main', error: e, stackTrace: st);
   }
+
+  developer.log('Calling runApp()', name: 'main');
+  runApp(const MyApp());
 }
 
-class MyApp extends ConsumerWidget {
+class MyApp extends StatelessWidget {
   const MyApp({super.key});
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  Widget build(BuildContext context) {
     return MaterialApp.router(
       title: 'Strategy Workbench',
       theme: AppTheme.darkTheme,
       routerConfig: appRouter,
-      // 한국어 로케일 지원
-      localizationsDelegates: const [
-        GlobalMaterialLocalizations.delegate,
-        GlobalWidgetsLocalizations.delegate,
-        GlobalCupertinoLocalizations.delegate,
-      ],
-      supportedLocales: const [
-        Locale('en'),
-        Locale('ko'),
-      ],
     );
   }
 }
@@ -174,7 +137,8 @@ class _DebugScreenState extends State<DebugScreen> {
       final stocks = await repo.getUsStocks();
       
       setState(() {
-        _statusMessage = 'Yahoo: ${stocks.length} stocks loaded\n${stocks.take(3).map((s) => '${s.ticker}: \$${s.price.toStringAsFixed(2)}').join('\n')}';
+        _statusMessage = 'Yahoo: ${stocks.length} stocks loaded\n' +
+            stocks.take(3).map((s) => '${s.ticker}: \$${s.price.toStringAsFixed(2)}').join('\n');
         _isLoading = false;
       });
       developer.log('Yahoo test result: ${stocks.length} stocks', name: 'DebugScreen');
@@ -200,7 +164,8 @@ class _DebugScreenState extends State<DebugScreen> {
       final stocks = await repo.getKoreanStocks();
       
       setState(() {
-        _statusMessage = 'Korean: ${stocks.length} stocks loaded\n${stocks.take(3).map((s) => '${s.ticker}: \$${s.price.toStringAsFixed(2)}').join('\n')}';
+        _statusMessage = 'Korean: ${stocks.length} stocks loaded\n' +
+            stocks.take(3).map((s) => '${s.ticker}: \$${s.price.toStringAsFixed(2)}').join('\n');
         _isLoading = false;
       });
       developer.log('Korean API test result: ${stocks.length} stocks', name: 'DebugScreen');
@@ -226,7 +191,8 @@ class _DebugScreenState extends State<DebugScreen> {
       final stocks = await repo.getAllStocks();
       
       setState(() {
-        _statusMessage = 'Hybrid: ${stocks.length} total stocks\n${stocks.take(5).map((s) => '${s.ticker}: \$${s.price.toStringAsFixed(2)}').join('\n')}';
+        _statusMessage = 'Hybrid: ${stocks.length} total stocks\n' +
+            stocks.take(5).map((s) => '${s.ticker}: \$${s.price.toStringAsFixed(2)}').join('\n');
         _isLoading = false;
       });
       developer.log('Hybrid API test result: ${stocks.length} stocks', name: 'DebugScreen');

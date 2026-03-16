@@ -1,0 +1,15 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(flutter analyze --no-pub)",
+      "Bash(flutter test)",
+      "Bash(flutter pub get)",
+      "Bash(flutter analyze)",
+      "Bash(flutter pub deps)",
+      "Bash(dart analyze:*)",
+      "Bash(flutter run:*)",
+      "Bash(flutter build:*)",
+      "Bash(flutter devices:*)"
+    ]
+  }
+}

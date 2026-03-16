@@ -1,3 +1,5 @@
+import 'dart:developer' as developer;
+
 import 'package:intl/intl.dart';
 import 'package:strategy_workbench/core/network/hive_service.dart';
 import 'package:strategy_workbench/features/strategy/domain/repositories/stock_repository.dart';
@@ -17,24 +19,29 @@ class DataSyncService {
     final lastUpdateDateString = settings.get('last_update_date');
     final todayString = DateFormat('yyyy-MM-dd').format(DateTime.now());
 
-    print('Last update date: $lastUpdateDateString, Today: $todayString');
+    developer.log(
+        'Last update date: $lastUpdateDateString, Today: $todayString',
+        name: 'DataSyncService');
 
     if (lastUpdateDateString != todayString) {
-      print('Date is different. Syncing stocks...');
-      
+      developer.log('Date is different. Syncing stocks...',
+          name: 'DataSyncService');
+
       final stocks = await _stockRepository.getStocks();
       final stockCache = _hiveService.stockCache;
-      
+
       await stockCache.clear();
-      
+
       final stockMap = {for (var stock in stocks) stock.ticker: stock};
       await stockCache.putAll(stockMap);
-      
+
       await settings.put('last_update_date', todayString);
-      
-      print('Sync complete. ${stocks.length} stocks cached. New update date: $todayString');
+
+      developer.log(
+          'Sync complete. ${stocks.length} stocks cached. New update date: $todayString',
+          name: 'DataSyncService');
     } else {
-      print('Data is already up-to-date.');
+      developer.log('Data is already up-to-date.', name: 'DataSyncService');
     }
   }
 }

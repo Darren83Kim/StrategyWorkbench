@@ -1,50 +1,13 @@
-import 'package:flutter/material.dart';
-import 'package:google_mobile_ads/google_mobile_ads.dart';
+// TODO(ads): google_mobile_ads 연동 시 아래 구현 복원
+// pubspec.yaml에 google_mobile_ads: any 추가 및
+// AndroidManifest.xml에 AdMob App ID 등록 후 사용
 
-class BannerAdWidget extends StatefulWidget {
+import 'package:flutter/material.dart';
+
+/// 광고 미연동 상태: 빈 위젯 반환 (공간 차지 없음)
+class BannerAdWidget extends StatelessWidget {
   const BannerAdWidget({super.key});
 
   @override
-  State<BannerAdWidget> createState() => _BannerAdWidgetState();
-}
-
-class _BannerAdWidgetState extends State<BannerAdWidget> {
-  BannerAd? _bannerAd;
-
-  @override
-  void initState() {
-    super.initState();
-    _load();
-  }
-
-  void _load() {
-    _bannerAd = BannerAd(
-      adUnitId: 'ca-app-pub-3940256099942544/6300978111', // Banner test ad unit
-      size: AdSize.banner,
-      request: const AdRequest(),
-      listener: BannerAdListener(
-        onAdLoaded: (ad) => setState(() {}),
-        onAdFailedToLoad: (ad, err) {
-          ad.dispose();
-        },
-      ),
-    );
-    _bannerAd!.load();
-  }
-
-  @override
-  void dispose() {
-    _bannerAd?.dispose();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    if (_bannerAd == null) return const SizedBox.shrink();
-    return SizedBox(
-      width: _bannerAd!.size.width.toDouble(),
-      height: _bannerAd!.size.height.toDouble(),
-      child: AdWidget(ad: _bannerAd!),
-    );
-  }
+  Widget build(BuildContext context) => const SizedBox.shrink();
 }
