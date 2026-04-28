@@ -1,188 +1,248 @@
 import 'dart:convert';
+import 'dart:developer' as developer;
+import 'dart:math';
 
-import 'package:workmanager/workmanager.dart';
 import 'package:hive_flutter/hive_flutter.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 import 'package:path_provider/path_provider.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+import 'package:workmanager/workmanager.dart';
 
-import '../scoring/scoring_engine.dart';
-import 'notification_service.dart';
 import '../../features/market/models/stock.dart' as market;
 import '../../features/strategy/domain/entities/stock.dart' as strategy;
-import 'dart:developer' as developer;
+import '../providers/filter_providers.dart';
+import '../scoring/scoring_engine.dart';
+import 'notification_service.dart';
 
-const backgroundTask = "backgroundStrategyCheck";
+const backgroundTask = 'backgroundStrategyCheck';
+const backgroundTaskUniqueName = 'backgroundStrategyCheck.daily';
+const backgroundTaskDebugUniqueName = 'backgroundStrategyCheck.debug';
+const legacyBackgroundTaskUniqueName = '1';
+const legacyBackgroundTaskDebugUniqueName = '2';
 
-/// WorkManager 콜백 (별도 Isolate에서 실행)
-/// Hive stock_cache, SharedPreferences saved_filters 에서 실 데이터를 읽어
-/// 스코어링 후 순위 이탈 종목에 알림을 보냄.
 @pragma('vm:entry-point')
 void callbackDispatcher() {
   Workmanager().executeTask((task, inputData) async {
-    if (task == backgroundTask) {
-      developer.log("--- Running Background Strategy Check ---",
-          name: 'BackgroundService');
-      try {
-        // --- 0. Isolate에서 Hive 재초기화 ---
-        final appDocDir = await getApplicationDocumentsDirectory();
-        await Hive.initFlutter(appDocDir.path);
-        if (!Hive.isAdapterRegistered(0)) {
-          Hive.registerAdapter(strategy.StockAdapter());
-        }
-
-        final stockCache = await Hive.openBox('stock_cache');
-        final settings = await Hive.openBox('settings');
-
-        // --- 1. Hive에서 주식 데이터 로드 ---
-        final allMarketStocks = <market.Stock>[];
-        for (final key in stockCache.keys) {
-          final s = stockCache.get(key);
-          if (s is strategy.Stock) {
-            allMarketStocks.add(market.Stock(
-              symbol: s.ticker,
-              name: s.name,
-              price: s.price,
-              change: 0,
-              per: s.per,
-              roe: s.roe,
-            ));
-          }
-        }
-
-        if (allMarketStocks.isEmpty) {
-          developer.log('No cached stocks found, skipping background check',
-              name: 'BackgroundService');
-          await _closeHive(stockCache, settings);
-          return true;
-        }
-
-        developer.log('Loaded ${allMarketStocks.length} stocks from Hive cache',
-            name: 'BackgroundService');
-
-        // --- 2. 포트폴리오 티커 로드 (Hive settings) ---
-        final portfolioTickersRaw = settings.get('portfolio_tickers');
-        final List<String> userPortfolio;
-        if (portfolioTickersRaw is List) {
-          userPortfolio = portfolioTickersRaw.cast<String>();
-        } else {
-          developer.log('No portfolio tickers found, skipping',
-              name: 'BackgroundService');
-          await _closeHive(stockCache, settings);
-          return true;
-        }
-
-        if (userPortfolio.isEmpty) {
-          developer.log('Portfolio is empty, skipping',
-              name: 'BackgroundService');
-          await _closeHive(stockCache, settings);
-          return true;
-        }
-
-        developer.log('Portfolio tickers: $userPortfolio',
-            name: 'BackgroundService');
-
-        // --- 3. 필터 가중치 로드 (SharedPreferences) ---
-        final prefs = await SharedPreferences.getInstance();
-        Map<String, double> weights = {'per': 0.5, 'roe': 0.5}; // 기본값
-        String sensitivity = 'Medium';
-
-        final activeFilterJson = prefs.getString('active_filter');
-        if (activeFilterJson != null) {
-          try {
-            final filterData = jsonDecode(activeFilterJson) as Map<String, dynamic>;
-            final w = filterData['weights'] as Map<String, dynamic>?;
-            if (w != null) {
-              weights = w.map((k, v) => MapEntry(k, (v as num).toDouble()));
-            }
-            sensitivity = filterData['sensitivity'] as String? ?? 'Medium';
-          } catch (e) {
-            developer.log('Failed to parse active filter: $e',
-                name: 'BackgroundService');
-          }
-        }
-
-        developer.log('Weights: $weights, Sensitivity: $sensitivity',
-            name: 'BackgroundService');
-
-        // --- 4. 스코어링 엔진 실행 ---
-        final engine = ScoringEngine();
-        final scoredStocks = engine.calculateScores(
-          stocks: allMarketStocks,
-          weights: weights,
-        );
-
-        // --- 5. 순위 이탈 감지 & 알림 ---
-        final rankThreshold = _getRankThreshold(sensitivity);
-        final rankedSymbols =
-            scoredStocks.map((s) => s.stock.symbol).toList();
-
-        for (final ownedTicker in userPortfolio) {
-          final rank = rankedSymbols.indexOf(ownedTicker);
-
-          if (rank == -1 || rank >= rankThreshold) {
-            // 보유 종목이 전략 순위권 밖으로 이탈
-            final stockName = allMarketStocks
-                .where((s) => s.symbol == ownedTicker)
-                .map((s) => s.name)
-                .firstOrNull ?? ownedTicker;
-
-            await NotificationService().init();
-            await NotificationService().showStrategyAlertNotification(
-              stockName: stockName,
-            );
-            developer.log(
-                "Sent alert: $stockName (rank: ${rank == -1 ? 'not found' : rank + 1}/$rankThreshold)",
-                name: 'BackgroundService');
-          }
-        }
-
-        developer.log("--- Background Strategy Check Complete ---",
-            name: 'BackgroundService');
-        await _closeHive(stockCache, settings);
-        return true;
-      } catch (e, st) {
-        developer.log("Error in background task: $e",
-            name: 'BackgroundService', error: e, stackTrace: st);
-        return false;
-      }
+    if (task != backgroundTask) {
+      return false;
     }
-    return false;
+
+    developer.log(
+      '--- Running Background Strategy Check ---',
+      name: 'BackgroundService',
+    );
+
+    Box<dynamic>? stockCache;
+    Box<dynamic>? settings;
+
+    try {
+      final appDocDir = await getApplicationDocumentsDirectory();
+      await Hive.initFlutter(appDocDir.path);
+      if (!Hive.isAdapterRegistered(0)) {
+        Hive.registerAdapter(strategy.StockAdapter());
+      }
+
+      stockCache = await Hive.openBox('stock_cache');
+      settings = await Hive.openBox('settings');
+
+      final allMarketStocks = <market.Stock>[];
+      for (final key in stockCache.keys) {
+        final cached = stockCache.get(key);
+        if (cached is strategy.Stock) {
+          allMarketStocks.add(
+            market.Stock(
+              symbol: cached.ticker,
+              name: cached.name,
+              price: cached.price,
+              change: 0,
+              per: cached.per,
+              roe: cached.roe,
+              dividendYield: cached.dividendYield,
+            ),
+          );
+        }
+      }
+
+      if (allMarketStocks.isEmpty) {
+        developer.log(
+          'No cached stocks found, skipping background check',
+          name: 'BackgroundService',
+        );
+        return true;
+      }
+
+      final portfolioTickersRaw = settings.get('portfolio_tickers');
+      final userPortfolio = portfolioTickersRaw is List
+          ? List<String>.from(portfolioTickersRaw)
+          : <String>[];
+
+      if (userPortfolio.isEmpty) {
+        developer.log(
+          'Portfolio is empty, skipping',
+          name: 'BackgroundService',
+        );
+        return true;
+      }
+
+      final prefs = await SharedPreferences.getInstance();
+      final activeStrategyName = prefs.getString(activeStrategyNameStorageKey);
+      final savedFiltersJson = prefs.getString(savedFiltersStorageKey);
+      final activeStrategy = resolveActiveStrategy(
+        activeStrategyName: activeStrategyName,
+        savedFiltersJson: savedFiltersJson,
+      );
+
+      if (activeStrategy == null) {
+        developer.log(
+          'No persisted active strategy found, skipping background check',
+          name: 'BackgroundService',
+        );
+        return true;
+      }
+
+      developer.log(
+        'Using strategy: ${activeStrategy.name} / sensitivity=${activeStrategy.sensitivity}',
+        name: 'BackgroundService',
+      );
+
+      final engine = ScoringEngine();
+      final scoredStocks = engine.calculateScores(
+        stocks: allMarketStocks,
+        weights: activeStrategy.weights,
+      );
+
+      if (scoredStocks.isEmpty) {
+        developer.log(
+          'No scored stocks available, skipping background check',
+          name: 'BackgroundService',
+        );
+        return true;
+      }
+
+      final rankThreshold = calculateSensitivityRankThreshold(
+        totalCount: scoredStocks.length,
+        sensitivity: activeStrategy.sensitivity,
+      );
+      final rankedSymbols =
+          scoredStocks.map((item) => item.stock.symbol).toList();
+      final notificationService = NotificationService();
+      await notificationService.init();
+
+      for (final ownedTicker in userPortfolio) {
+        final rankIndex = rankedSymbols.indexOf(ownedTicker);
+        if (rankIndex == -1 || rankIndex >= rankThreshold) {
+          final matchingStock =
+              allMarketStocks.where((stock) => stock.symbol == ownedTicker);
+          final stockName =
+              matchingStock.isEmpty ? ownedTicker : matchingStock.first.name;
+
+          await notificationService.showStrategyAlertNotification(
+            stockName: stockName,
+          );
+          developer.log(
+            'Sent alert: $stockName (rank: ${rankIndex == -1 ? 'not found' : rankIndex + 1}/$rankThreshold)',
+            name: 'BackgroundService',
+          );
+        }
+      }
+
+      developer.log(
+        '--- Background Strategy Check Complete ---',
+        name: 'BackgroundService',
+      );
+      return true;
+    } catch (error, stackTrace) {
+      developer.log(
+        'Error in background task: $error',
+        name: 'BackgroundService',
+        error: error,
+        stackTrace: stackTrace,
+      );
+      return false;
+    } finally {
+      await _closeHive(stockCache, settings);
+    }
   });
 }
 
-Future<void> _closeHive(Box stockCache, Box settings) async {
+Future<void> _closeHive(
+    Box<dynamic>? stockCache, Box<dynamic>? settings) async {
   try {
-    await stockCache.close();
-    await settings.close();
+    await stockCache?.close();
+    await settings?.close();
   } catch (_) {}
 }
 
-int _getRankThreshold(String sensitivity) {
+double sensitivityRatioForLevel(String sensitivity) {
   switch (sensitivity) {
     case 'High':
-      return 10;
-    case 'Medium':
-      return 20;
+      return 0.10;
     case 'Low':
-      return 30;
+      return 0.30;
+    case 'Medium':
     default:
-      return 20;
+      return 0.20;
   }
+}
+
+int calculateSensitivityRankThreshold({
+  required int totalCount,
+  required String sensitivity,
+}) {
+  if (totalCount <= 0) {
+    return 1;
+  }
+
+  final ratio = sensitivityRatioForLevel(sensitivity);
+  return max(1, (totalCount * ratio).ceil());
+}
+
+SavedFilter? resolveActiveStrategy({
+  required String? activeStrategyName,
+  required String? savedFiltersJson,
+}) {
+  if (activeStrategyName == null || activeStrategyName.isEmpty) {
+    return null;
+  }
+
+  final merged = <String, SavedFilter>{
+    for (final preset in presetStrategies) preset.name: preset,
+  };
+
+  if (savedFiltersJson != null && savedFiltersJson.isNotEmpty) {
+    try {
+      final decoded = jsonDecode(savedFiltersJson) as List<dynamic>;
+      for (final item in decoded) {
+        final filter = SavedFilter.fromJson(item as Map<String, dynamic>);
+        merged[filter.name] = filter;
+      }
+    } catch (error, stackTrace) {
+      developer.log(
+        'Failed to parse saved filters in background isolate: $error',
+        name: 'BackgroundService',
+        error: error,
+        stackTrace: stackTrace,
+      );
+    }
+  }
+
+  return merged[activeStrategyName];
 }
 
 class BackgroundService {
   Future<void> init() async {
     await Workmanager().initialize(
       callbackDispatcher,
-      isInDebugMode: true, // TODO: Set to false for release
+      isInDebugMode: true,
     );
   }
 
   Future<void> registerDailyTask() async {
+    await _cancelKnownTasks();
     await Workmanager().registerPeriodicTask(
-      "1",
+      backgroundTaskUniqueName,
       backgroundTask,
       frequency: const Duration(days: 1),
+      existingWorkPolicy: ExistingWorkPolicy.replace,
       constraints: Constraints(
         networkType: NetworkType.connected,
       ),
@@ -190,19 +250,33 @@ class BackgroundService {
     );
   }
 
-  /// 오후 4시까지의 지연시간 계산
+  Future<void> cancelDailyTask() async {
+    await _cancelKnownTasks();
+  }
+
   Duration _calculateInitialDelay() {
     final now = DateTime.now();
-    DateTime nextRun =
-        DateTime(now.year, now.month, now.day, 16, 0); // 오후 4시
+    var nextRun = DateTime(now.year, now.month, now.day, 16, 0);
     if (now.isAfter(nextRun)) {
       nextRun = nextRun.add(const Duration(days: 1));
     }
     return nextRun.difference(now);
   }
 
-  /// 디버그용 즉시 실행
   void forceRunTask() {
-    Workmanager().registerOneOffTask("2", backgroundTask);
+    Workmanager().registerOneOffTask(
+      backgroundTaskDebugUniqueName,
+      backgroundTask,
+      existingWorkPolicy: ExistingWorkPolicy.replace,
+    );
+  }
+
+  Future<void> _cancelKnownTasks() async {
+    await Future.wait([
+      Workmanager().cancelByUniqueName(backgroundTaskUniqueName),
+      Workmanager().cancelByUniqueName(backgroundTaskDebugUniqueName),
+      Workmanager().cancelByUniqueName(legacyBackgroundTaskUniqueName),
+      Workmanager().cancelByUniqueName(legacyBackgroundTaskDebugUniqueName),
+    ]);
   }
 }

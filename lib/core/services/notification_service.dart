@@ -8,8 +8,13 @@ class NotificationService {
 
   final FlutterLocalNotificationsPlugin _notificationsPlugin =
       FlutterLocalNotificationsPlugin();
+  bool _initialized = false;
 
   Future<void> init() async {
+    if (_initialized) {
+      return;
+    }
+
     // --- Android Initialization ---
     const AndroidInitializationSettings initializationSettingsAndroid =
         AndroidInitializationSettings('@mipmap/ic_launcher'); // Default icon
@@ -28,7 +33,8 @@ class NotificationService {
       defaultActionName: 'Open notification',
     );
 
-    const InitializationSettings initializationSettings = InitializationSettings(
+    const InitializationSettings initializationSettings =
+        InitializationSettings(
       android: initializationSettingsAndroid,
       iOS: initializationSettingsIOS,
       linux: initializationSettingsLinux, // This is used for Windows
@@ -52,6 +58,8 @@ class NotificationService {
             sound: true,
           );
     }
+
+    _initialized = true;
   }
 
   Future<void> showStrategyAlertNotification({

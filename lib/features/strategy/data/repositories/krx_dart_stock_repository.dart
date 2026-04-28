@@ -1,5 +1,6 @@
 import 'package:strategy_workbench/core/network/dio_client.dart';
 import 'package:strategy_workbench/core/constants/api_keys.dart';
+import 'package:strategy_workbench/features/strategy/data/repositories/stock_universe.dart';
 import 'package:strategy_workbench/features/strategy/domain/entities/stock.dart';
 import 'dart:developer' as developer;
 
@@ -10,20 +11,6 @@ import 'dart:developer' as developer;
 class KrxDartStockRepository {
   final DioClient _dioClient;
 
-  /// 주요 한국 종목 (종목코드 → 종목명)
-  static const Map<String, String> defaultTickers = {
-    '005930': '삼성전자',
-    '000660': 'SK하이닉스',
-    '373220': 'LG에너지솔루션',
-    '207940': '삼성바이오로직스',
-    '005380': '현대자동차',
-    '006400': '삼성SDI',
-    '051910': 'LG화학',
-    '035420': 'NAVER',
-    '000270': '기아',
-    '035720': '카카오',
-  };
-
   KrxDartStockRepository({DioClient? dioClient})
       : _dioClient = dioClient ?? DioClient();
 
@@ -31,7 +18,7 @@ class KrxDartStockRepository {
   Future<List<Stock>> getStocks({
     Map<String, String>? tickers,
   }) async {
-    final targetTickers = tickers ?? defaultTickers;
+    final targetTickers = tickers ?? koreanUniverseTickers;
 
     if (!ApiKeys.isKrxConfigured) {
       developer.log('KRX API key not configured',
@@ -68,7 +55,7 @@ class KrxDartStockRepository {
   /// 단일 종목 조회 (종목코드)
   Future<Stock?> getStockByCode(String stockCode) async {
     try {
-      final name = defaultTickers[stockCode] ?? stockCode;
+      final name = koreanUniverseTickers[stockCode] ?? stockCode;
       return await _fetchStock(stockCode, name);
     } catch (e) {
       developer.log('Error fetching stock $stockCode: $e',
@@ -217,8 +204,8 @@ class KrxDartStockRepository {
 
       for (final item in list) {
         final accountName = item['account_nm'] as String? ?? '';
-        final amountStr = (item['thstrm_amount'] as String? ?? '0')
-            .replaceAll(',', '');
+        final amountStr =
+            (item['thstrm_amount'] as String? ?? '0').replaceAll(',', '');
 
         if (accountName.contains('당기순이익')) {
           netIncome = double.tryParse(amountStr) ?? 0.0;

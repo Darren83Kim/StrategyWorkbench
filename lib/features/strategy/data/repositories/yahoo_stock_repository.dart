@@ -1,5 +1,6 @@
 import 'package:strategy_workbench/core/network/dio_client.dart';
 import 'package:strategy_workbench/core/constants/api_keys.dart';
+import 'package:strategy_workbench/features/strategy/data/repositories/stock_universe.dart';
 import 'package:strategy_workbench/features/strategy/domain/entities/stock.dart';
 import 'dart:developer' as developer;
 
@@ -12,16 +13,7 @@ class YahooStockRepository {
 
   /// 여러 티커의 주식 정보를 조회
   Future<List<Stock>> getStocks({
-    List<String> tickers = const [
-      'AAPL',
-      'GOOGL',
-      'MSFT',
-      'AMZN',
-      'NVDA',
-      'TSLA',
-      'META',
-      'JNPR'
-    ],
+    List<String> tickers = usUniverseTickers,
   }) async {
     try {
       final stocks = <Stock>[];
@@ -76,17 +68,17 @@ class YahooStockRepository {
 
       final result = response['quoteSummary']?['result'];
       if (result == null || (result is List && result.isEmpty)) {
-        developer.log('No data found for $ticker', name: 'YahooStockRepository');
+        developer.log('No data found for $ticker',
+            name: 'YahooStockRepository');
         return null;
       }
 
       final data = result is List ? result[0] : result;
 
       // 데이터 추출
-      final price = _extractDouble(
-          data['price']?['regularMarketPrice']?['raw'], fallback: 0.0);
-      final per = _extractDouble(
-          data['summaryDetail']?['trailingPE']?['raw'],
+      final price = _extractDouble(data['price']?['regularMarketPrice']?['raw'],
+          fallback: 0.0);
+      final per = _extractDouble(data['summaryDetail']?['trailingPE']?['raw'],
           fallback: 0.0);
       final roe = _extractDouble(
           data['defaultKeyStatistics']?['returnOnEquity']?['raw'],

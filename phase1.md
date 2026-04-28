@@ -1,25 +1,29 @@
-## **📄 phase1.md: Foundation & Glassmorphism Architecture**
+## 📄 phase1.md: Foundation & App Shell
 
-### **1\. 목표 및 설계 원칙**
+현재 구현 상태는 `IMPLEMENTATION_STATUS.md`에서 관리합니다.
 
-* **Architecture:** Feature-based Clean Architecture (기능별 계층 분리).  
-* **Design:** Dark Mode 기반 Glassmorphism. BackdropFilter를 이용한 실시간 배경 블러링 구현.  
-* **Color Palette:** Background(\#0F172A), Card/Glass(\#1E293B, 60% Opacity), Point(\#10B981, \#EF4444).
+### 1. 목표 및 설계 원칙
 
-### **2\. 세부 수행 작업 (Detailed Tasks)**
+- **Goal:** 실제 서비스 화면을 띄울 수 있는 앱 셸, 라우팅, 공통 테마, 디버그 보조 진입점을 만든다.
+- **Design:** Dark Mode 기반 Glassmorphism을 공통 위젯과 테마로 정리한다.
+- **Correction:** DebugScreen은 개발용 검증 화면이며, 프로덕션 시작 화면은 대시보드 기준으로 잡는다.
 
-1. **프로젝트 초기화:** flutter create 실행 후 pubspec.yaml에 flutter\_riverpod, dio, hive\_flutter, sqflite, fl\_chart, flutter\_animate, intl, google\_mobile\_ads, flutter\_local\_notifications, workmanager 추가.  
-   * (추가 제안) 네비게이션 관리를 위한 **go_router**, 디버깅을 위한 **logger** 패키지 추가.
-2. **디렉토리 물리 구조 생성:**  
-   * lib/core/theme, lib/core/network, lib/core/constants, **lib/core/router** 생성.  
-   * lib/features/ 하위에 dashboard, strategy, portfolio, market 폴더 생성 및 각 폴더 내 data, domain, presentation 하위 폴더 생성.  
-   * lib/shared/widgets 생성.  
-3. **테마 설정:** core/theme/app\_theme.dart에 다크모드 ThemeData 정의 (Scaffold 배경색 \#0F172A 설정).  
-4. **GlassContainer 구현:** shared/widgets/glass\_container.dart에 ClipRRect \-\> BackdropFilter(sigma: 15\) \-\> Container(color: Colors.white.withOpacity(0.1)) 순서로 겹친 공통 위젯 구현.  
-5. **디버깅 전용 화면 구축:** lib/main.dart를 수정하여 DebugScreen을 시작 화면으로 설정.
+### 2. 세부 수행 작업
 
-### **3\. 검증 및 디버깅 (Verification & Debugging)**
+1. Flutter 프로젝트와 공통 의존성을 정리한다.
+   - `flutter_riverpod`, `dio`, `hive_flutter`, `sqflite`, `fl_chart`, `flutter_local_notifications`, `workmanager`, `go_router`, `shared_preferences`, `path_provider` 등을 포함한다.
+   - 광고 SDK(`google_mobile_ads`)는 Phase 5에서 실제 연동 시점에 추가한다.
+2. 기능 중심 디렉토리 구조를 만든다.
+   - `lib/core`, `lib/features`, `lib/shared/widgets`를 기준으로 정리한다.
+3. 다크 테마와 공용 GlassContainer를 구현한다.
+4. `go_router` 기반 앱 셸과 루트 네비게이션을 구현한다.
+   - `dashboard`, `strategy`, `portfolio`, `market/:symbol`, `debug` 라우트를 둔다.
+5. 디버그 화면을 구현한다.
+   - 스코어링, 백그라운드 태스크, API 상태 확인 등 개발 검증 기능을 모은다.
 
-* **패키지 무결성 검사:** flutter pub get 실행 후 모든 의존성 충돌 여부 확인.  
-* **시각적 디버깅(중요):** DebugScreen 배경에 **빨강, 노랑, 파랑색의 큰 원(Circle)들이 움직이는 애니메이션**을 넣고, 그 위에 GlassContainer를 배치하여 배경색이 세련되게 뭉개지는지(Blur) 눈으로 확인 후 보고할 것.  
-* **렌더링 성능 체크:** 블러 효과 적용 시 프레임 드랍(Jank)이 발생하는지 디버그 콘솔 확인.
+### 3. 검증 및 디버깅
+
+- `flutter pub get` 및 기본 빌드가 실패하지 않아야 한다.
+- 앱 시작 시 대시보드가 열리고, `/debug` 라우트로 개발 검증 화면에 진입할 수 있어야 한다.
+- Glass blur가 실제 기기/에뮬레이터에서 시각적으로 깨지지 않아야 한다.
+- 블러 적용 시 렌더링 문제가 있는지 로그와 체감 성능으로 확인한다.

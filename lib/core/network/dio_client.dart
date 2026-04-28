@@ -169,9 +169,16 @@ class DioClient {
 class _LoggingInterceptor extends Interceptor {
   @override
   void onRequest(RequestOptions options, RequestInterceptorHandler handler) {
+    final sanitizedHeaders = Map<String, dynamic>.from(options.headers);
+    for (final key in const ['Authorization', 'appKey', 'appSecret']) {
+      if (sanitizedHeaders.containsKey(key)) {
+        sanitizedHeaders[key] = '<redacted>';
+      }
+    }
+
     developer.log(
       'Request: ${options.method} ${options.path}\n'
-      'Headers: ${options.headers}\n'
+      'Headers: $sanitizedHeaders\n'
       'Query: ${options.queryParameters}',
       name: 'DioClient.Request',
     );
@@ -180,9 +187,10 @@ class _LoggingInterceptor extends Interceptor {
 
   @override
   void onResponse(Response response, ResponseInterceptorHandler handler) {
+    final dataPreview = buildResponsePreview(response.data);
     developer.log(
       'Response: ${response.statusCode} ${response.statusMessage}\n'
-      'Data: ${response.data.toString().substring(0, 200)}...',
+      'Data: $dataPreview',
       name: 'DioClient.Response',
     );
     super.onResponse(response, handler);
@@ -197,4 +205,12 @@ class _LoggingInterceptor extends Interceptor {
     );
     super.onError(err, handler);
   }
+}
+
+String buildResponsePreview(dynamic data, {int maxLength = 200}) {
+  final text = data?.toString() ?? 'null';
+  if (text.length <= maxLength) {
+    return text;
+  }
+  return '${text.substring(0, maxLength)}...';
 }

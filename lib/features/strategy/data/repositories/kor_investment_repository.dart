@@ -1,31 +1,42 @@
 import 'package:strategy_workbench/core/network/dio_client.dart';
 import 'package:strategy_workbench/core/constants/api_keys.dart';
+import 'package:strategy_workbench/features/strategy/data/repositories/stock_universe.dart';
 import 'package:strategy_workbench/features/strategy/domain/entities/stock.dart';
 import 'dart:developer' as developer;
 import 'dart:convert';
 import 'package:dio/dio.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 /// 한국투자증권 API를 사용하는 스톡 저장소
 class KorInvestmentRepository {
+  static const _tokenStorageKey = 'kor_investment_access_token';
+  static const _tokenExpiryStorageKey = 'kor_investment_access_token_expiry';
+
   final DioClient _dioClient;
   String? _accessToken;
   DateTime? _tokenExpiry;
+  bool _persistedTokenLoaded = false;
 
   KorInvestmentRepository({DioClient? dioClient})
       : _dioClient = dioClient ?? DioClient();
 
   /// 여러 종목의 주식 정보를 조회
   Future<List<Stock>> getStocks({
-    List<String> codes = const [
-      '005930', // 삼성전자
-      '000660', // SK하이닉스
-      '207940', // SM C&C
-      '006400', // 삼성SDI
-      '009150', // 삼성전기
-    ],
+    List<String>? codes,
   }) async {
+    final targetCodes = codes ?? koreanUniverseCodes;
+
     try {
+      if (!ApiKeys.isKorInvestmentRuntimeEnabled) {
+        developer.log(
+          'Korea Investment runtime disabled in debug. Skipping token issue.',
+          name: 'KorInvestmentRepository',
+        );
+        return [];
+      }
+
       // 토큰 확인 및 갱신
+      await _restorePersistedTokenIfNeeded();
       if (_accessToken == null || _isTokenExpired()) {
         await _authenticate();
       }
@@ -33,7 +44,7 @@ class KorInvestmentRepository {
       final stocks = <Stock>[];
 
       // 각 종목 정보 조회
-      for (final code in codes) {
+      for (final code in targetCodes) {
         try {
           final stock = await _fetchStock(code);
           if (stock != null) {
@@ -59,6 +70,15 @@ class KorInvestmentRepository {
   /// 단일 종목 조회
   Future<Stock?> getStockByCode(String code) async {
     try {
+      if (!ApiKeys.isKorInvestmentRuntimeEnabled) {
+        developer.log(
+          'Korea Investment runtime disabled in debug. Skipping token issue.',
+          name: 'KorInvestmentRepository',
+        );
+        return null;
+      }
+
+      await _restorePersistedTokenIfNeeded();
       if (_accessToken == null || _isTokenExpired()) {
         await _authenticate();
       }
@@ -76,8 +96,23 @@ class KorInvestmentRepository {
       developer.log('Authenticating with Korea Investment API',
           name: 'KorInvestmentRepository');
 
+      if (!ApiKeys.isKorInvestmentRuntimeEnabled) {
+        throw ApiException(
+          'Korea Investment authentication is disabled in debug runtime',
+        );
+      }
+
       if (!ApiKeys.isKorInvestmentConfigured) {
         throw ApiException('Korea Investment API keys not configured');
+      }
+
+      await _restorePersistedTokenIfNeeded();
+      if (_accessToken != null && !_isTokenExpired()) {
+        developer.log(
+          'Using persisted Korea Investment token',
+          name: 'KorInvestmentRepository',
+        );
+        return;
       }
 
       final body = {
@@ -99,8 +134,10 @@ class KorInvestmentRepository {
       final expiresIn = response['expires_in'] ?? 3600;
 
       _tokenExpiry = DateTime.now().add(Duration(seconds: expiresIn - 60));
+      await _persistToken();
 
-      developer.log('Successfully authenticated. Token expires in $expiresIn seconds',
+      developer.log(
+          'Successfully authenticated. Token expires in $expiresIn seconds',
           name: 'KorInvestmentRepository');
     } catch (e) {
       developer.log('Authentication failed: $e',
@@ -121,8 +158,8 @@ class KorInvestmentRepository {
       final headers = _getHeaders();
 
       final queryParams = {
-        'fid_cond_mrkt_div_code': '0',
-        'fid_input_iscd': code,
+        'FID_COND_MRKT_DIV_CODE': 'J',
+        'FID_INPUT_ISCD': code,
       };
 
       final response = await _dioClient.get(
@@ -146,7 +183,8 @@ class KorInvestmentRepository {
 
       final output = response['output'];
       if (output == null) {
-        developer.log('No output data for $code', name: 'KorInvestmentRepository');
+        developer.log('No output data for $code',
+            name: 'KorInvestmentRepository');
         return null;
       }
 
@@ -169,8 +207,7 @@ class KorInvestmentRepository {
         lastUpdated: DateTime.now(),
       );
 
-      developer.log(
-          'Fetched Korean stock: $code, Price: $price, PER: $per',
+      developer.log('Fetched Korean stock: $code, Price: $price, PER: $per',
           name: 'KorInvestmentRepository');
       return stock;
     } on ApiException {
@@ -185,7 +222,8 @@ class KorInvestmentRepository {
   /// 요청 헤더 생성 (HMAC-SHA256 서명 포함)
   Map<String, dynamic> _getHeaders() {
     if (_accessToken == null) {
-      throw ApiException('Access token not available. Please authenticate first.');
+      throw ApiException(
+          'Access token not available. Please authenticate first.');
     }
 
     return {
@@ -193,6 +231,7 @@ class KorInvestmentRepository {
       'Content-Type': 'application/json; charset=utf-8',
       'appKey': ApiKeys.korInvestmentAppKey,
       'appSecret': ApiKeys.korInvestmentSecret,
+      'tr_id': 'FHKST01010100',
     };
   }
 
@@ -200,6 +239,71 @@ class KorInvestmentRepository {
   bool _isTokenExpired() {
     if (_tokenExpiry == null) return true;
     return DateTime.now().isAfter(_tokenExpiry!);
+  }
+
+  Future<void> _restorePersistedTokenIfNeeded() async {
+    if (_persistedTokenLoaded) {
+      return;
+    }
+
+    _persistedTokenLoaded = true;
+
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final token = prefs.getString(_tokenStorageKey);
+      final expiryRaw = prefs.getString(_tokenExpiryStorageKey);
+
+      if (token == null || expiryRaw == null) {
+        return;
+      }
+
+      final expiry = DateTime.tryParse(expiryRaw);
+      if (expiry == null || DateTime.now().isAfter(expiry)) {
+        await _clearPersistedToken(prefs);
+        return;
+      }
+
+      _accessToken = token;
+      _tokenExpiry = expiry;
+      developer.log(
+        'Restored persisted Korea Investment token',
+        name: 'KorInvestmentRepository',
+      );
+    } catch (e) {
+      developer.log(
+        'Failed to restore persisted Korea Investment token: $e',
+        name: 'KorInvestmentRepository',
+        error: e,
+      );
+    }
+  }
+
+  Future<void> _persistToken() async {
+    if (_accessToken == null || _tokenExpiry == null) {
+      return;
+    }
+
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString(_tokenStorageKey, _accessToken!);
+      await prefs.setString(
+        _tokenExpiryStorageKey,
+        _tokenExpiry!.toIso8601String(),
+      );
+    } catch (e) {
+      developer.log(
+        'Failed to persist Korea Investment token: $e',
+        name: 'KorInvestmentRepository',
+        error: e,
+      );
+    }
+  }
+
+  Future<void> _clearPersistedToken(SharedPreferences prefs) async {
+    _accessToken = null;
+    _tokenExpiry = null;
+    await prefs.remove(_tokenStorageKey);
+    await prefs.remove(_tokenExpiryStorageKey);
   }
 
   /// 안전한 double 파싱

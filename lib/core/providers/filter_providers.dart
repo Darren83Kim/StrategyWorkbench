@@ -1,7 +1,12 @@
 import 'dart:convert';
+import 'dart:developer' as developer;
+
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import 'dart:developer' as developer;
+
+const savedFiltersStorageKey = 'saved_filters';
+const activeStrategyNameStorageKey = 'active_strategy_name';
+const watchlistStorageKey = 'strategy_watchlist_v1';
 
 // ── 저장된 필터 모델 ──
 class SavedFilter {
@@ -9,6 +14,7 @@ class SavedFilter {
   final Map<String, double> weights;
   final DateTime createdAt;
   final int topN;
+  final String sensitivity;
   final bool isPreset;
 
   SavedFilter({
@@ -16,6 +22,7 @@ class SavedFilter {
     required this.weights,
     DateTime? createdAt,
     this.topN = 10,
+    this.sensitivity = 'Medium',
     this.isPreset = false,
   }) : createdAt = createdAt ?? DateTime.now();
 
@@ -23,12 +30,14 @@ class SavedFilter {
     String? name,
     Map<String, double>? weights,
     int? topN,
+    String? sensitivity,
   }) {
     return SavedFilter(
       name: name ?? this.name,
       weights: weights ?? Map<String, double>.from(this.weights),
       createdAt: createdAt,
       topN: topN ?? this.topN,
+      sensitivity: sensitivity ?? this.sensitivity,
       isPreset: isPreset,
     );
   }
@@ -38,6 +47,7 @@ class SavedFilter {
         'weights': weights,
         'createdAt': createdAt.toIso8601String(),
         'topN': topN,
+        'sensitivity': sensitivity,
         'isPreset': isPreset,
       };
 
@@ -47,6 +57,7 @@ class SavedFilter {
       weights: Map<String, double>.from(json['weights'] as Map),
       createdAt: DateTime.parse(json['createdAt'] as String),
       topN: (json['topN'] as int?) ?? 10,
+      sensitivity: json['sensitivity'] as String? ?? 'Medium',
       isPreset: (json['isPreset'] as bool?) ?? false,
     );
   }
@@ -82,8 +93,6 @@ final presetStrategies = [
 
 // ── 저장된 필터 목록 관리 (SharedPreferences) ──
 class SavedFiltersNotifier extends AsyncNotifier<List<SavedFilter>> {
-  static const _storageKey = 'saved_filters';
-
   @override
   Future<List<SavedFilter>> build() async {
     return await _loadFromStorage();
@@ -92,7 +101,7 @@ class SavedFiltersNotifier extends AsyncNotifier<List<SavedFilter>> {
   Future<List<SavedFilter>> _loadFromStorage() async {
     try {
       final prefs = await SharedPreferences.getInstance();
-      final jsonString = prefs.getString(_storageKey);
+      final jsonString = prefs.getString(savedFiltersStorageKey);
       if (jsonString == null) return [];
       final List<dynamic> jsonList = jsonDecode(jsonString);
       return jsonList
@@ -107,23 +116,31 @@ class SavedFiltersNotifier extends AsyncNotifier<List<SavedFilter>> {
   Future<void> _saveToStorage(List<SavedFilter> filters) async {
     try {
       final prefs = await SharedPreferences.getInstance();
-      final jsonString =
-          jsonEncode(filters.map((f) => f.toJson()).toList());
-      await prefs.setString(_storageKey, jsonString);
+      final jsonString = jsonEncode(filters.map((f) => f.toJson()).toList());
+      await prefs.setString(savedFiltersStorageKey, jsonString);
     } catch (e) {
       developer.log('Error saving filters: $e', name: 'SavedFiltersNotifier');
     }
   }
 
-  Future<void> addFilter(SavedFilter filter) async {
+  Future<void> upsertFilter(
+    SavedFilter filter, {
+    String? previousName,
+  }) async {
     final current = state.value ?? [];
     final updated = [
-      ...current.where((f) => f.name != filter.name),
+      ...current.where(
+        (f) => f.name != filter.name && f.name != previousName,
+      ),
       filter,
     ];
     state = AsyncData(updated);
     await _saveToStorage(updated);
     developer.log('Filter saved: ${filter.name}', name: 'SavedFiltersNotifier');
+  }
+
+  Future<void> addFilter(SavedFilter filter) async {
+    await upsertFilter(filter);
   }
 
   Future<void> removeFilter(String name) async {
@@ -134,7 +151,6 @@ class SavedFiltersNotifier extends AsyncNotifier<List<SavedFilter>> {
     developer.log('Filter removed: $name', name: 'SavedFiltersNotifier');
   }
 
-  /// topN 변경 — 커스텀 전략이면 업데이트, 프리셋이면 커스텀 복사본 생성
   Future<void> updateTopN(String filterName, int topN) async {
     final current = state.value ?? [];
     if (current.any((f) => f.name == filterName)) {
@@ -144,7 +160,6 @@ class SavedFiltersNotifier extends AsyncNotifier<List<SavedFilter>> {
       state = AsyncData(updated);
       await _saveToStorage(updated);
     } else {
-      // 프리셋 → 커스텀 복사본으로 topN 저장
       final preset = presetStrategies.firstWhere(
         (p) => p.name == filterName,
         orElse: () => SavedFilter(name: filterName, weights: {}),
@@ -171,13 +186,11 @@ final allStrategiesProvider = Provider<List<SavedFilter>>((ref) {
 
 // ── 관심 종목 (전략별 ★ 체크된 종목) ──
 class WatchlistNotifier extends AsyncNotifier<Map<String, Set<String>>> {
-  static const _key = 'strategy_watchlist_v1';
-
   @override
   Future<Map<String, Set<String>>> build() async {
     try {
       final prefs = await SharedPreferences.getInstance();
-      final json = prefs.getString(_key);
+      final json = prefs.getString(watchlistStorageKey);
       if (json == null) return {};
       final Map<String, dynamic> raw = jsonDecode(json);
       return raw.map(
@@ -203,15 +216,16 @@ class WatchlistNotifier extends AsyncNotifier<Map<String, Set<String>>> {
     state = AsyncData(current);
     await _persist(current);
     developer.log(
-        'Watchlist toggled: $strategyName / $ticker',
-        name: 'WatchlistNotifier');
+      'Watchlist toggled: $strategyName / $ticker',
+      name: 'WatchlistNotifier',
+    );
   }
 
   Future<void> _persist(Map<String, Set<String>> data) async {
     try {
       final prefs = await SharedPreferences.getInstance();
       final map = data.map((k, v) => MapEntry(k, v.toList()));
-      await prefs.setString(_key, jsonEncode(map));
+      await prefs.setString(watchlistStorageKey, jsonEncode(map));
     } catch (e) {
       developer.log('Error saving watchlist: $e', name: 'WatchlistNotifier');
     }
@@ -223,18 +237,59 @@ final watchlistProvider =
   WatchlistNotifier.new,
 );
 
-// ── 현재 활성 필터 (호환성 유지) ──
-class ActiveFilterNotifier extends Notifier<SavedFilter?> {
+// ── 현재 활성 전략 이름 ──
+class ActiveStrategyNameNotifier extends AsyncNotifier<String?> {
   @override
-  SavedFilter? build() => null;
+  Future<String?> build() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      return prefs.getString(activeStrategyNameStorageKey);
+    } catch (e) {
+      developer.log(
+        'Error loading active strategy: $e',
+        name: 'ActiveStrategyNameNotifier',
+      );
+      return null;
+    }
+  }
 
-  void set(SavedFilter? filter) => state = filter;
+  Future<void> setActive(String? strategyName) async {
+    state = AsyncData(strategyName);
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      if (strategyName == null || strategyName.isEmpty) {
+        await prefs.remove(activeStrategyNameStorageKey);
+      } else {
+        await prefs.setString(activeStrategyNameStorageKey, strategyName);
+      }
+    } catch (e) {
+      developer.log(
+        'Error saving active strategy: $e',
+        name: 'ActiveStrategyNameNotifier',
+      );
+    }
+  }
 }
 
-final activeFilterProvider =
-    NotifierProvider<ActiveFilterNotifier, SavedFilter?>(
-  ActiveFilterNotifier.new,
+final activeStrategyNameProvider =
+    AsyncNotifierProvider<ActiveStrategyNameNotifier, String?>(
+  ActiveStrategyNameNotifier.new,
 );
+
+final activeStrategyProvider = Provider<SavedFilter?>((ref) {
+  final activeName = ref.watch(activeStrategyNameProvider).value;
+  if (activeName == null || activeName.isEmpty) {
+    return null;
+  }
+
+  final strategies = ref.watch(allStrategiesProvider);
+  return strategies.where((s) => s.name == activeName).firstOrNull;
+});
+
+// ── 현재 활성 필터 (호환성 유지) ──
+final activeFilterProvider = Provider<SavedFilter?>((ref) {
+  return ref.watch(activeStrategyProvider);
+});
 
 // ── 프리셋 맵 (filter_creation_screen 호환성 유지) ──
 final presetsProvider = Provider<Map<String, Map<String, double>>>((ref) {

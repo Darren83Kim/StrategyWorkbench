@@ -1,5 +1,6 @@
 import 'package:strategy_workbench/core/network/dio_client.dart';
 import 'package:strategy_workbench/core/constants/api_keys.dart';
+import 'package:strategy_workbench/features/strategy/data/repositories/stock_universe.dart';
 import 'package:strategy_workbench/features/strategy/domain/entities/stock.dart';
 import 'dart:developer' as developer;
 
@@ -15,10 +16,7 @@ class FinnhubStockRepository {
 
   /// 여러 티커의 주식 정보를 조회
   Future<List<Stock>> getStocks({
-    List<String> tickers = const [
-      'AAPL', 'GOOGL', 'MSFT', 'AMZN', 'NVDA',
-      'TSLA', 'META', 'JPM', 'V', 'JNJ',
-    ],
+    List<String> tickers = usUniverseTickers,
   }) async {
     if (!ApiKeys.isFinnhubConfigured) {
       developer.log('Finnhub API key not configured',
@@ -42,7 +40,8 @@ class FinnhubStockRepository {
         }
       }
 
-      developer.log('Successfully fetched ${stocks.length}/${tickers.length} stocks from Finnhub',
+      developer.log(
+          'Successfully fetched ${stocks.length}/${tickers.length} stocks from Finnhub',
           name: 'FinnhubStockRepository');
       return stocks;
     } catch (e) {
@@ -71,7 +70,8 @@ class FinnhubStockRepository {
       final token = ApiKeys.finnhubApiKey;
 
       // 1. Quote API - 실시간 시세
-      final quoteUrl = '${ApiKeys.finnhubBaseUrl}/quote?symbol=$ticker&token=$token';
+      final quoteUrl =
+          '${ApiKeys.finnhubBaseUrl}/quote?symbol=$ticker&token=$token';
       final quoteResponse = await _dioClient.get(quoteUrl);
 
       if (quoteResponse == null || quoteResponse is! Map) {
@@ -82,7 +82,8 @@ class FinnhubStockRepository {
 
       final price = _extractDouble(quoteResponse['c'], fallback: 0.0);
       if (price <= 0) {
-        developer.log('No price data for $ticker', name: 'FinnhubStockRepository');
+        developer.log('No price data for $ticker',
+            name: 'FinnhubStockRepository');
         return null;
       }
 
@@ -102,7 +103,8 @@ class FinnhubStockRepository {
             per = _extractDouble(metric['peBasicExclExtraTTM'], fallback: 0.0);
             roe = _extractDouble(metric['roeTTM'], fallback: 0.0);
             dividendYield = _extractDouble(
-                metric['dividendYieldIndicatedAnnual'], fallback: 0.0);
+                metric['dividendYieldIndicatedAnnual'],
+                fallback: 0.0);
           }
         }
       } catch (e) {

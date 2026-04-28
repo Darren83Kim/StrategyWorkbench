@@ -28,6 +28,13 @@ class DataSyncService {
           name: 'DataSyncService');
 
       final stocks = await _stockRepository.getStocks();
+      if (stocks.isEmpty) {
+        developer.log(
+            'Sync skipped because fetch returned 0 stocks. Keeping existing cache.',
+            name: 'DataSyncService');
+        return;
+      }
+
       final stockCache = _hiveService.stockCache;
 
       await stockCache.clear();

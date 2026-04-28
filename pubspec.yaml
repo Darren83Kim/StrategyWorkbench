@@ -23,7 +23,7 @@ dependencies:
   fl_chart: ^0.69.2
   flutter_animate: any
   intl: any
-  # google_mobile_ads: any  # TODO: 광고 연동 시 추가 + AdMob App ID 설정 필요
+  google_mobile_ads: any
   flutter_local_notifications: any
   workmanager: any
   go_router: any

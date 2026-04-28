@@ -1,10 +1,17 @@
+import 'dart:async';
+import 'dart:convert';
+
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:hive_flutter/hive_flutter.dart';
 import 'package:strategy_workbench/core/network/database_helper.dart';
 import 'package:strategy_workbench/features/portfolio/domain/entities/transaction.dart'
     as model;
 import 'package:strategy_workbench/features/portfolio/domain/services/portfolio_service.dart';
+import 'package:strategy_workbench/features/strategy/domain/entities/stock.dart'
+    as strategy;
 import 'dart:developer' as developer;
+
+const portfolioSnapshotStorageKey = 'portfolio_snapshot_v1';
 
 // ── 포트폴리오 아이템 모델 ──
 class PortfolioItem {
@@ -27,16 +34,124 @@ class PortfolioItem {
   double get gainLoss => currentValue - totalCost;
   double get gainLossPercent =>
       totalCost > 0 ? (gainLoss / totalCost * 100) : 0;
+
+  PortfolioItem copyWith({
+    String? ticker,
+    String? name,
+    double? quantity,
+    double? avgPrice,
+    double? currentPrice,
+  }) {
+    return PortfolioItem(
+      ticker: ticker ?? this.ticker,
+      name: name ?? this.name,
+      quantity: quantity ?? this.quantity,
+      avgPrice: avgPrice ?? this.avgPrice,
+      currentPrice: currentPrice ?? this.currentPrice,
+    );
+  }
+
+  Map<String, dynamic> toJson() => {
+        'ticker': ticker,
+        'name': name,
+        'quantity': quantity,
+        'avgPrice': avgPrice,
+        'currentPrice': currentPrice,
+      };
+
+  factory PortfolioItem.fromJson(Map<String, dynamic> json) {
+    return PortfolioItem(
+      ticker: json['ticker'] as String,
+      name: json['name'] as String? ?? json['ticker'] as String,
+      quantity: (json['quantity'] as num).toDouble(),
+      avgPrice: (json['avgPrice'] as num).toDouble(),
+      currentPrice: (json['currentPrice'] as num).toDouble(),
+    );
+  }
 }
 
 // ── 포트폴리오 상태 관리 ──
 class PortfolioNotifier extends Notifier<List<PortfolioItem>> {
   @override
-  List<PortfolioItem> build() => [];
+  List<PortfolioItem> build() {
+    final initial = _loadFromStorage();
+    unawaited(syncFromTransactions());
+    return initial;
+  }
+
+  List<PortfolioItem> _loadFromStorage() {
+    try {
+      if (!Hive.isBoxOpen('settings')) {
+        return [];
+      }
+
+      final settings = Hive.box('settings');
+      final raw = settings.get(portfolioSnapshotStorageKey);
+      if (raw is! String || raw.isEmpty) {
+        return [];
+      }
+
+      final decoded = jsonDecode(raw) as List<dynamic>;
+      return decoded
+          .map((item) => PortfolioItem.fromJson(item as Map<String, dynamic>))
+          .toList();
+    } catch (e) {
+      developer.log(
+        'Failed to load portfolio snapshot: $e',
+        name: 'PortfolioNotifier',
+      );
+      return [];
+    }
+  }
+
+  Future<void> syncFromTransactions() async {
+    try {
+      final transactions = await DatabaseHelper.instance.readAllTransactions();
+      final rebuilt = buildPortfolioFromTransactions(
+        transactions,
+        existingItems: state,
+        cachedStocks: _readCachedStocks(),
+      );
+
+      if (!_samePortfolio(state, rebuilt)) {
+        state = rebuilt;
+      }
+
+      await _persistPortfolioState();
+      developer.log(
+        'Portfolio rebuilt from ${transactions.length} transactions: ${rebuilt.length} holdings',
+        name: 'PortfolioNotifier',
+      );
+    } catch (e) {
+      developer.log(
+        'Failed to rebuild portfolio from transactions: $e',
+        name: 'PortfolioNotifier',
+      );
+    }
+  }
+
+  Map<String, strategy.Stock> _readCachedStocks() {
+    final stocks = <String, strategy.Stock>{};
+    if (!Hive.isBoxOpen('stock_cache')) {
+      return stocks;
+    }
+
+    final stockCache = Hive.box('stock_cache');
+    for (final key in stockCache.keys) {
+      final value = stockCache.get(key);
+      if (value is strategy.Stock) {
+        stocks[value.ticker.toUpperCase()] = value;
+      }
+    }
+    return stocks;
+  }
 
   /// 매수 (추가 매수 시 평단가 자동 계산)
   void buy(String ticker, String name, int quantity, double price) {
-    final existing = state.indexWhere((item) => item.ticker == ticker);
+    final normalizedTicker = ticker.trim().toUpperCase();
+    final normalizedName = name.trim().isEmpty ? normalizedTicker : name.trim();
+    final existing = state
+        .indexWhere((item) => item.ticker.toUpperCase() == normalizedTicker);
 
     if (existing >= 0) {
       // 추가 매수 → 평단가 재계산
@@ -52,7 +167,7 @@ class PortfolioNotifier extends Notifier<List<PortfolioItem>> {
       state = [
         ...state.sublist(0, existing),
         PortfolioItem(
-          ticker: item.ticker,
+          ticker: normalizedTicker,
           name: item.name,
           quantity: item.quantity + quantity,
           avgPrice: newAvgPrice,
@@ -65,8 +180,8 @@ class PortfolioNotifier extends Notifier<List<PortfolioItem>> {
       state = [
         ...state,
         PortfolioItem(
-          ticker: ticker,
-          name: name,
+          ticker: normalizedTicker,
+          name: normalizedName,
           quantity: quantity.toDouble(),
           avgPrice: price,
           currentPrice: price,
@@ -74,21 +189,26 @@ class PortfolioNotifier extends Notifier<List<PortfolioItem>> {
       ];
     }
 
-    developer.log('BUY: $ticker x$quantity @ $price',
+    developer.log('BUY: $normalizedTicker x$quantity @ $price',
         name: 'PortfolioNotifier');
     _syncPortfolioToHive();
   }
 
   /// 매도
   void sell(String ticker, int quantity) {
-    final existing = state.indexWhere((item) => item.ticker == ticker);
+    final normalizedTicker = ticker.trim().toUpperCase();
+    final existing = state.indexWhere(
+      (item) => item.ticker.toUpperCase() == normalizedTicker,
+    );
     if (existing < 0) return;
 
     final item = state[existing];
     final remainingQty = item.quantity - quantity;
 
     if (remainingQty <= 0) {
-      state = state.where((i) => i.ticker != ticker).toList();
+      state = state
+          .where((item) => item.ticker.toUpperCase() != normalizedTicker)
+          .toList();
     } else {
       state = [
         ...state.sublist(0, existing),
@@ -103,16 +223,31 @@ class PortfolioNotifier extends Notifier<List<PortfolioItem>> {
       ];
     }
 
-    developer.log('SELL: $ticker x$quantity', name: 'PortfolioNotifier');
+    developer.log(
+      'SELL: $normalizedTicker x$quantity',
+      name: 'PortfolioNotifier',
+    );
     _syncPortfolioToHive();
   }
 
   /// 포트폴리오 티커 목록을 Hive settings에 저장 (BackgroundService용)
   void _syncPortfolioToHive() {
+    unawaited(_persistPortfolioState());
+  }
+
+  Future<void> _persistPortfolioState() async {
     try {
       final tickers = state.map((item) => item.ticker).toList();
+      if (!Hive.isBoxOpen('settings')) {
+        return;
+      }
+
       final settings = Hive.box('settings');
-      settings.put('portfolio_tickers', tickers);
+      await settings.put('portfolio_tickers', tickers);
+      await settings.put(
+        portfolioSnapshotStorageKey,
+        jsonEncode(state.map((item) => item.toJson()).toList()),
+      );
       developer.log('Synced portfolio tickers to Hive: $tickers',
           name: 'PortfolioNotifier');
     } catch (e) {
@@ -123,10 +258,11 @@ class PortfolioNotifier extends Notifier<List<PortfolioItem>> {
 
   /// 현재가 업데이트
   void updatePrice(String ticker, double newPrice) {
+    final normalizedTicker = ticker.trim().toUpperCase();
     state = state.map((item) {
-      if (item.ticker == ticker) {
+      if (item.ticker.toUpperCase() == normalizedTicker) {
         return PortfolioItem(
-          ticker: item.ticker,
+          ticker: normalizedTicker,
           name: item.name,
           quantity: item.quantity,
           avgPrice: item.avgPrice,
@@ -135,6 +271,7 @@ class PortfolioNotifier extends Notifier<List<PortfolioItem>> {
       }
       return item;
     }).toList();
+    _syncPortfolioToHive();
   }
 }
 
@@ -161,8 +298,9 @@ class TransactionHistoryNotifier
   Future<void> addTransaction(model.Transaction transaction) async {
     try {
       final db = DatabaseHelper.instance;
-      await db.create(transaction);
-      state = AsyncData([...(state.value ?? []), transaction]);
+      final created = await db.create(transaction);
+      state = AsyncData([...(state.value ?? []), created]);
+      await ref.read(portfolioProvider.notifier).syncFromTransactions();
       developer.log(
           'Transaction added: ${transaction.type} ${transaction.ticker}',
           name: 'TransactionHistoryNotifier');
@@ -173,8 +311,8 @@ class TransactionHistoryNotifier
   }
 }
 
-final transactionHistoryProvider = AsyncNotifierProvider<
-    TransactionHistoryNotifier, List<model.Transaction>>(
+final transactionHistoryProvider =
+    AsyncNotifierProvider<TransactionHistoryNotifier, List<model.Transaction>>(
   TransactionHistoryNotifier.new,
 );
 
@@ -197,3 +335,107 @@ final portfolioSummaryProvider = Provider<Map<String, double>>((ref) {
     'stockCount': portfolio.length.toDouble(),
   };
 });
+
+List<PortfolioItem> buildPortfolioFromTransactions(
+  List<model.Transaction> transactions, {
+  List<PortfolioItem> existingItems = const [],
+  Map<String, strategy.Stock> cachedStocks = const {},
+}) {
+  final portfolioService = PortfolioService();
+  final holdings = <String, PortfolioItem>{};
+  final knownNames = <String, String>{
+    for (final item in existingItems) item.ticker.toUpperCase(): item.name,
+  };
+  final knownPrices = <String, double>{
+    for (final item in existingItems)
+      item.ticker.toUpperCase(): item.currentPrice,
+  };
+
+  for (final entry in cachedStocks.entries) {
+    knownNames.putIfAbsent(entry.key, () => entry.value.name);
+    knownPrices[entry.key] = entry.value.price;
+  }
+
+  final ordered = [...transactions]
+    ..sort((a, b) => a.dateTime.compareTo(b.dateTime));
+
+  for (final tx in ordered) {
+    final ticker = tx.ticker.trim().toUpperCase();
+    if (ticker.isEmpty) {
+      continue;
+    }
+
+    final currentPrice = knownPrices[ticker] ?? tx.price;
+    final name = knownNames[ticker] ?? ticker;
+    final existing = holdings[ticker];
+
+    if (tx.type == model.TransactionType.BUY) {
+      if (existing == null) {
+        holdings[ticker] = PortfolioItem(
+          ticker: ticker,
+          name: name,
+          quantity: tx.quantity.toDouble(),
+          avgPrice: tx.price,
+          currentPrice: currentPrice,
+        );
+      } else {
+        final newAvgPrice = portfolioService.calculateAveragePrice(
+          existingQuantity: existing.quantity.toInt(),
+          existingAveragePrice: existing.avgPrice,
+          newQuantity: tx.quantity,
+          newPrice: tx.price,
+        );
+        holdings[ticker] = existing.copyWith(
+          name: name,
+          quantity: existing.quantity + tx.quantity,
+          avgPrice: newAvgPrice,
+          currentPrice: currentPrice,
+        );
+      }
+      continue;
+    }
+
+    if (existing == null) {
+      continue;
+    }
+
+    final remainingQuantity = existing.quantity - tx.quantity;
+    if (remainingQuantity <= 0) {
+      holdings.remove(ticker);
+      continue;
+    }
+
+    holdings[ticker] = existing.copyWith(
+      name: name,
+      quantity: remainingQuantity,
+      currentPrice: currentPrice,
+    );
+  }
+
+  return holdings.values
+      .map((item) => item.copyWith(
+            name: knownNames[item.ticker.toUpperCase()] ?? item.name,
+            currentPrice:
+                knownPrices[item.ticker.toUpperCase()] ?? item.currentPrice,
+          ))
+      .toList()
+    ..sort((a, b) => a.ticker.compareTo(b.ticker));
+}
+
+bool _samePortfolio(List<PortfolioItem> a, List<PortfolioItem> b) {
+  if (a.length != b.length) {
+    return false;
+  }
+
+  for (var i = 0; i < a.length; i++) {
+    if (a[i].ticker != b[i].ticker ||
+        a[i].name != b[i].name ||
+        a[i].quantity != b[i].quantity ||
+        a[i].avgPrice != b[i].avgPrice ||
+        a[i].currentPrice != b[i].currentPrice) {
+      return false;
+    }
+  }
+
+  return true;
+}

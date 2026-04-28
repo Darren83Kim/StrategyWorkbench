@@ -1,15 +1,17 @@
 import 'dart:async';
-import 'dart:ui' show PlatformDispatcher;
 
 import 'package:strategy_workbench/core/router/app_router.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import 'package:strategy_workbench/core/network/hive_service.dart';
+import 'package:strategy_workbench/core/providers/filter_providers.dart';
+import 'package:strategy_workbench/core/services/alert_runtime_service.dart';
 import 'package:strategy_workbench/core/services/background_service.dart';
-import 'package:strategy_workbench/core/services/notification_service.dart';
 import 'package:strategy_workbench/features/strategy/data/repositories/hybrid_stock_repository.dart';
 import 'package:strategy_workbench/features/strategy/data/repositories/kor_investment_repository.dart';
 import 'package:strategy_workbench/features/strategy/domain/services/data_sync_service.dart';
@@ -17,7 +19,6 @@ import 'package:strategy_workbench/core/theme/app_theme.dart';
 import 'core/scoring/scoring_engine.dart';
 import 'features/market/models/stock.dart';
 import 'dart:developer' as developer;
-
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -57,28 +58,84 @@ Future<void> main() async {
     await hiveService.init();
     developer.log('HiveService initialized', name: 'main');
   } catch (e, st) {
-    developer.log('HiveService init failed: $e', name: 'main', error: e, stackTrace: st);
+    developer.log('HiveService init failed: $e',
+        name: 'main', error: e, stackTrace: st);
   }
 
   // 3. 앱 즉시 시작 (스플래시 → 대시보드)
   developer.log('runApp() called', name: 'main');
   runApp(const ProviderScope(child: MyApp()));
 
-  // 4. 무거운 초기화는 앱 시작 후 백그라운드에서 실행
-  unawaited(_initServicesAsync(hiveService));
+  // 활성 전략이 없으면 남아 있는 백그라운드 알림 작업부터 빠르게 정리한다.
+  unawaited(_cancelAlertTasksIfIdle());
+
+  // 4. 무거운 초기화는 첫 프레임 이후로 늦춰 초기 반응성을 확보한다.
+  WidgetsBinding.instance.addPostFrameCallback((_) {
+    unawaited(_deferServiceInit(hiveService));
+  });
 }
 
-/// 앱 렌더링 후 백그라운드 초기화 (UI를 블로킹하지 않음)
-Future<void> _initServicesAsync(HiveService hiveService) async {
+Future<void> _cancelAlertTasksIfIdle() async {
   try {
-    final notificationService = NotificationService();
-    await notificationService.init();
-    developer.log('NotificationService initialized', name: 'main');
+    final prefs = await SharedPreferences.getInstance();
+    final activeStrategyName = prefs.getString(activeStrategyNameStorageKey);
+    if (activeStrategyName == null || activeStrategyName.isEmpty) {
+      await AlertRuntimeService.shared.syncForStrategy(strategyName: null);
+      developer.log(
+        'Cancelled alert tasks on startup because no active strategy exists',
+        name: 'main',
+      );
+    }
+  } catch (e, st) {
+    developer.log(
+      'Idle alert cleanup failed: $e',
+      name: 'main',
+      error: e,
+      stackTrace: st,
+    );
+  }
+}
 
-    final backgroundService = BackgroundService();
-    await backgroundService.init();
-    await backgroundService.registerDailyTask();
-    developer.log('BackgroundService initialized', name: 'main');
+Future<void> _deferServiceInit(HiveService hiveService) async {
+  const alertDelay = kDebugMode ? 5200 : 900;
+  const syncDelay = kDebugMode ? 3200 : 1400;
+
+  await Future<void>.delayed(const Duration(milliseconds: alertDelay));
+  await _initAlertRuntimeIfNeeded();
+
+  await Future<void>.delayed(const Duration(milliseconds: syncDelay));
+  await _syncStocksAsync(hiveService);
+}
+
+/// 활성 전략이 있을 때만 알림/백그라운드 런타임을 올린다.
+Future<void> _initAlertRuntimeIfNeeded() async {
+  try {
+    final prefs = await SharedPreferences.getInstance();
+    final activeStrategyName = prefs.getString(activeStrategyNameStorageKey);
+
+    await AlertRuntimeService.shared.syncForStrategy(
+      strategyName: activeStrategyName,
+    );
+    developer.log(
+      'Alert runtime sync complete (active=$activeStrategyName)',
+      name: 'main',
+    );
+  } catch (e, st) {
+    developer.log('Alert runtime init failed: $e',
+        name: 'main', error: e, stackTrace: st);
+  }
+}
+
+/// 앱 렌더링 후 캐시 동기화를 더 늦게 수행해 첫 화면 반응성을 우선한다.
+Future<void> _syncStocksAsync(HiveService hiveService) async {
+  try {
+    if (kDebugMode && hiveService.stockCache.isNotEmpty) {
+      developer.log(
+        'Startup data sync skipped in debug because cache already exists',
+        name: 'main',
+      );
+      return;
+    }
 
     final stockRepository = HybridStockRepository();
     final dataSyncService = DataSyncService(
@@ -88,7 +145,12 @@ Future<void> _initServicesAsync(HiveService hiveService) async {
     await dataSyncService.syncStocksIfNeeded();
     developer.log('DataSync complete', name: 'main');
   } catch (e, st) {
-    developer.log('Background init failed: $e', name: 'main', error: e, stackTrace: st);
+    developer.log(
+      'DataSync init failed: $e',
+      name: 'main',
+      error: e,
+      stackTrace: st,
+    );
   }
 }
 
@@ -130,23 +192,47 @@ class _DebugScreenState extends State<DebugScreen> {
     developer.log("--- Running Scoring Engine Test ---");
     final engine = ScoringEngine();
     final testStocks = [
-      Stock(symbol: "GOOD", name: "Good Stock", price: 100, change: 1, per: 10, roe: 0.2),
-      Stock(symbol: "BAD_PER", name: "Bad PER Stock", price: 100, change: 1, per: 0, roe: 0.15),
-      Stock(symbol: "NULL_ROE", name: "Null ROE Stock", price: 100, change: 1, per: 15, roe: null),
-      Stock(symbol: "BEST", name: "Best Stock", price: 100, change: 1, per: 5, roe: 0.3),
+      Stock(
+          symbol: "GOOD",
+          name: "Good Stock",
+          price: 100,
+          change: 1,
+          per: 10,
+          roe: 0.2),
+      Stock(
+          symbol: "BAD_PER",
+          name: "Bad PER Stock",
+          price: 100,
+          change: 1,
+          per: 0,
+          roe: 0.15),
+      Stock(
+          symbol: "NULL_ROE",
+          name: "Null ROE Stock",
+          price: 100,
+          change: 1,
+          per: 15,
+          roe: null),
+      Stock(
+          symbol: "BEST",
+          name: "Best Stock",
+          price: 100,
+          change: 1,
+          per: 5,
+          roe: 0.3),
     ];
     final weights = {'per': 0.5, 'roe': 0.5};
 
-    final results = engine.calculateScores(stocks: testStocks, weights: weights);
+    final results =
+        engine.calculateScores(stocks: testStocks, weights: weights);
 
     final logOutput = StringBuffer();
     logOutput.writeln("Scoring Test Results (Sorted by score):");
     for (final res in results) {
       logOutput.writeln(
-        "${res.stock.name}: Score = ${res.score.toStringAsFixed(2)}, "
-        "PER Score = ${res.normalizedScores['per']?.toStringAsFixed(2)}, "
-        "ROE Score = ${res.normalizedScores['roe']?.toStringAsFixed(2)}"
-      );
+          "${res.stock.name}: Score = ${res.score.toStringAsFixed(2)}, "
+          "PER Score = ${res.normalizedScores['per']?.toStringAsFixed(2)}, "
+          "ROE Score = ${res.normalizedScores['roe']?.toStringAsFixed(2)}");
     }
     developer.log(logOutput.toString());
     setState(() {
@@ -157,7 +243,8 @@ class _DebugScreenState extends State<DebugScreen> {
   void _forceBackgroundTask() {
     developer.log("--- Forcing Background Task ---");
     BackgroundService().forceRunTask();
-    developer.log("One-off background task has been registered. Check logs/notifications in a few moments.");
+    developer.log(
+        "One-off background task has been registered. Check logs/notifications in a few moments.");
     setState(() {
       _statusMessage = 'Background task triggered - check notifications';
     });
@@ -172,12 +259,14 @@ class _DebugScreenState extends State<DebugScreen> {
     try {
       final repo = HybridStockRepository();
       final stocks = await repo.getUsStocks();
-      
+
       setState(() {
-        _statusMessage = 'Yahoo: ${stocks.length} stocks loaded\n${stocks.take(3).map((s) => '${s.ticker}: \$${s.price.toStringAsFixed(2)}').join('\n')}';
+        _statusMessage =
+            'Yahoo: ${stocks.length} stocks loaded\n${stocks.take(3).map((s) => '${s.ticker}: \$${s.price.toStringAsFixed(2)}').join('\n')}';
         _isLoading = false;
       });
-      developer.log('Yahoo test result: ${stocks.length} stocks', name: 'DebugScreen');
+      developer.log('Yahoo test result: ${stocks.length} stocks',
+          name: 'DebugScreen');
     } catch (e) {
       setState(() {
         _statusMessage = 'Yahoo API Error: $e';
@@ -198,12 +287,14 @@ class _DebugScreenState extends State<DebugScreen> {
         korRepository: KorInvestmentRepository(),
       );
       final stocks = await repo.getKoreanStocks();
-      
+
       setState(() {
-        _statusMessage = 'Korean: ${stocks.length} stocks loaded\n${stocks.take(3).map((s) => '${s.ticker}: \$${s.price.toStringAsFixed(2)}').join('\n')}';
+        _statusMessage =
+            'Korean: ${stocks.length} stocks loaded\n${stocks.take(3).map((s) => '${s.ticker}: \$${s.price.toStringAsFixed(2)}').join('\n')}';
         _isLoading = false;
       });
-      developer.log('Korean API test result: ${stocks.length} stocks', name: 'DebugScreen');
+      developer.log('Korean API test result: ${stocks.length} stocks',
+          name: 'DebugScreen');
     } catch (e) {
       setState(() {
         _statusMessage = 'Korean API Error: $e';
@@ -224,12 +315,14 @@ class _DebugScreenState extends State<DebugScreen> {
         korRepository: KorInvestmentRepository(),
       );
       final stocks = await repo.getAllStocks();
-      
+
       setState(() {
-        _statusMessage = 'Hybrid: ${stocks.length} total stocks\n${stocks.take(5).map((s) => '${s.ticker}: \$${s.price.toStringAsFixed(2)}').join('\n')}';
+        _statusMessage =
+            'Hybrid: ${stocks.length} total stocks\n${stocks.take(5).map((s) => '${s.ticker}: \$${s.price.toStringAsFixed(2)}').join('\n')}';
         _isLoading = false;
       });
-      developer.log('Hybrid API test result: ${stocks.length} stocks', name: 'DebugScreen');
+      developer.log('Hybrid API test result: ${stocks.length} stocks',
+          name: 'DebugScreen');
     } catch (e) {
       setState(() {
         _statusMessage = 'Hybrid API Error: $e';
@@ -267,7 +360,7 @@ class _DebugScreenState extends State<DebugScreen> {
                   ),
                 ),
                 const SizedBox(height: 20),
-                
+
                 // Phase 3 Tests
                 ElevatedButton(
                   onPressed: _runScoringTest,
@@ -279,7 +372,7 @@ class _DebugScreenState extends State<DebugScreen> {
                   child: const Text("Force Run Background Task"),
                 ),
                 const Divider(height: 30),
-                
+
                 // API Tests
                 ElevatedButton.icon(
                   onPressed: _isLoading ? null : _testYahooApi,

@@ -3,6 +3,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:strategy_workbench/core/providers/language_provider.dart';
 
+import 'banner_ad_widget.dart';
+
 class RootLayout extends ConsumerWidget {
   const RootLayout({super.key, required this.child, required this.location});
 
@@ -15,24 +17,30 @@ class RootLayout extends ConsumerWidget {
 
     return Scaffold(
       body: child,
-      bottomNavigationBar: BottomNavigationBar(
-        currentIndex: _selectedIndex(location),
-        onTap: (index) => _onTap(index, context),
-        type: BottomNavigationBarType.fixed,
-        selectedItemColor: Theme.of(context).colorScheme.primary,
-        unselectedItemColor: Colors.grey,
-        items: [
-          BottomNavigationBarItem(
-            icon: const Icon(Icons.dashboard),
-            label: s.navDashboard,
-          ),
-          BottomNavigationBarItem(
-            icon: const Icon(Icons.search),
-            label: s.navStrategy,
-          ),
-          BottomNavigationBarItem(
-            icon: const Icon(Icons.pie_chart),
-            label: s.navPortfolio,
+      bottomNavigationBar: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          const BannerAdWidget(),
+          BottomNavigationBar(
+            currentIndex: _selectedIndex(location),
+            onTap: (index) => _onTap(index, context),
+            type: BottomNavigationBarType.fixed,
+            selectedItemColor: Theme.of(context).colorScheme.primary,
+            unselectedItemColor: Colors.grey,
+            items: [
+              BottomNavigationBarItem(
+                icon: const Icon(Icons.dashboard),
+                label: s.navDashboard,
+              ),
+              BottomNavigationBarItem(
+                icon: const Icon(Icons.search),
+                label: s.navStrategy,
+              ),
+              BottomNavigationBarItem(
+                icon: const Icon(Icons.pie_chart),
+                label: s.navPortfolio,
+              ),
+            ],
           ),
         ],
       ),
@@ -47,9 +55,12 @@ class RootLayout extends ConsumerWidget {
 
   void _onTap(int index, BuildContext context) {
     switch (index) {
-      case 0: context.go('/dashboard');
-      case 1: context.go('/strategy');
-      case 2: context.go('/portfolio');
+      case 0:
+        context.go('/dashboard');
+      case 1:
+        context.go('/strategy');
+      case 2:
+        context.go('/portfolio');
     }
   }
 }

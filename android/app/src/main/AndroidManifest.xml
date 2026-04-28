@@ -37,6 +37,11 @@
             android:name="flutterEmbedding"
             android:value="2" />
 
+        <!-- Google Mobile Ads test App ID. Replace with real AdMob App ID for release. -->
+        <meta-data
+            android:name="com.google.android.gms.ads.APPLICATION_ID"
+            android:value="ca-app-pub-3940256099942544~3347511713" />
+
         <!-- Impeller 비활성화: 에뮬레이터 OpenGLES mipmap 크래시 방지 -->
         <!-- BackdropFilter(blur)가 Impeller+OpenGLES에서 SIGABRT 유발 -->
         <meta-data

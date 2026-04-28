@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:hive_flutter/hive_flutter.dart';
 import 'package:intl/intl.dart';
@@ -6,8 +7,9 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:strategy_workbench/core/providers/filter_providers.dart';
 import 'package:strategy_workbench/core/providers/stock_providers.dart';
 import 'package:strategy_workbench/core/scoring/scoring_engine.dart';
-import 'package:strategy_workbench/core/extensions/stock_extension.dart';
 import 'package:strategy_workbench/features/strategy/domain/entities/stock.dart';
+import 'package:strategy_workbench/features/market/models/stock.dart'
+    as market_stock;
 import 'dart:developer' as developer;
 
 // ── 스냅샷 종목 ──
@@ -59,8 +61,7 @@ class StrategySnapshot {
   int? rankChange(String ticker) {
     final prevRank =
         previous.where((s) => s.ticker == ticker).firstOrNull?.rank;
-    final curRank =
-        current.where((s) => s.ticker == ticker).firstOrNull?.rank;
+    final curRank = current.where((s) => s.ticker == ticker).firstOrNull?.rank;
     if (prevRank == null || curRank == null) return null;
     return prevRank - curRank;
   }
@@ -80,8 +81,120 @@ class StrategySnapshot {
 String _snapKey(String strategyName) =>
     'snap_v1_${strategyName.replaceAll(' ', '_')}';
 
-// ── 전체 주식 (Hive 캐시 → API 폴백, 마켓 필터 무관) ──
+Map<String, dynamic> _serializeStrategyStock(Stock stock) => {
+      'ticker': stock.ticker,
+      'name': stock.name,
+      'price': stock.price,
+      'per': stock.per,
+      'roe': stock.roe,
+      'dividendYield': stock.dividendYield,
+    };
+
+Map<String, dynamic> _serializeSnapshotRequest({
+  required List<Stock> stocks,
+  required Map<String, double> weights,
+  required int topN,
+}) {
+  return {
+    'stocks': stocks.map(_serializeStrategyStock).toList(),
+    'weights': weights,
+    'topN': topN,
+  };
+}
+
+Future<List<SnapshotStock>> _buildSnapshotStocksInBackground({
+  required List<Stock> stocks,
+  required Map<String, double> weights,
+  required int topN,
+}) async {
+  final payload = _serializeSnapshotRequest(
+    stocks: stocks,
+    weights: weights,
+    topN: topN,
+  );
+  final results = await compute(_scoreSnapshotStocks, payload);
+
+  return results
+      .map((item) => SnapshotStock.fromJson(Map<String, dynamic>.from(item)))
+      .toList();
+}
+
+List<Map<String, dynamic>> _scoreSnapshotStocks(Map<String, dynamic> payload) {
+  final rawStocks = (payload['stocks'] as List<dynamic>)
+      .map((item) => Map<String, dynamic>.from(item as Map))
+      .toList();
+  final weights = Map<String, double>.from(payload['weights'] as Map);
+  final topN = payload['topN'] as int? ?? 10;
+
+  final marketStocks = rawStocks
+      .map(
+        (item) => market_stock.Stock(
+          symbol: item['ticker'] as String,
+          name: item['name'] as String,
+          price: (item['price'] as num).toDouble(),
+          change: 0,
+          per: (item['per'] as num?)?.toDouble(),
+          roe: (item['roe'] as num?)?.toDouble(),
+          dividendYield: (item['dividendYield'] as num?)?.toDouble(),
+        ),
+      )
+      .toList();
+
+  final scored =
+      ScoringEngine().calculateScores(stocks: marketStocks, weights: weights);
+
+  return scored
+      .take(topN)
+      .toList()
+      .asMap()
+      .entries
+      .map(
+        (entry) => {
+          'ticker': entry.value.stock.symbol,
+          'name': entry.value.stock.name,
+          'price': entry.value.stock.price,
+          'score': entry.value.score,
+          'rank': entry.key + 1,
+        },
+      )
+      .toList();
+}
+
+// ── 전체 주식 (Hive 캐시 → API 폴백, 당일 캐시만 사용) ──
 final allStocksForSnapshotProvider = FutureProvider<List<Stock>>((ref) async {
+  final today = DateFormat('yyyy-MM-dd').format(DateTime.now());
+  try {
+    final settings = Hive.box('settings');
+    final lastUpdate = settings.get('last_update_date') as String?;
+    if (lastUpdate == today) {
+      final stockCache = Hive.box('stock_cache');
+      if (stockCache.isNotEmpty) {
+        final cached = <Stock>[];
+        for (final key in stockCache.keys) {
+          final s = stockCache.get(key);
+          if (s is Stock) cached.add(s);
+        }
+        if (cached.isNotEmpty) {
+          developer.log(
+              'Snapshot using ${cached.length} cached stocks ($today)',
+              name: 'allStocksForSnapshot');
+          return cached;
+        }
+      }
+    } else {
+      developer.log(
+          'Hive cache stale (was: $lastUpdate, today: $today), fetching fresh',
+          name: 'allStocksForSnapshot');
+    }
+  } catch (e) {
+    developer.log('Hive read error: $e', name: 'allStocksForSnapshot');
+  }
+  final repo = ref.read(hybridRepositoryProvider);
+  final freshStocks = await repo.getAllStocks();
+  if (freshStocks.isNotEmpty) {
+    return freshStocks;
+  }
+
   try {
     final stockCache = Hive.box('stock_cache');
     if (stockCache.isNotEmpty) {
@@ -92,16 +205,17 @@ final allStocksForSnapshotProvider = FutureProvider<List<Stock>>((ref) async {
       }
       if (cached.isNotEmpty) {
         developer.log(
-            'Snapshot using ${cached.length} cached stocks',
+            'Fresh fetch returned 0 stocks. Reusing stale Hive cache with ${cached.length} entries.',
             name: 'allStocksForSnapshot');
         return cached;
       }
     }
   } catch (e) {
-    developer.log('Hive read error: $e', name: 'allStocksForSnapshot');
+    developer.log('Stale Hive fallback read error: $e',
+        name: 'allStocksForSnapshot');
   }
-  final repo = ref.read(hybridRepositoryProvider);
-  return await repo.getAllStocks();
+
+  return freshStocks;
 });
 
 // ── 전략별 스냅샷 Provider (family, non-autoDispose) ──
@@ -125,8 +239,21 @@ final strategySnapshotProvider =
         final previous = (json['previous'] as List? ?? [])
             .map((e) => SnapshotStock.fromJson(e as Map<String, dynamic>))
             .toList();
-        developer.log(
-            'Cache hit: $strategyName ($today)', name: 'strategySnapshot');
+        if (current.isEmpty) {
+          developer.log(
+              'Same-day cache for $strategyName is empty. Recomputing snapshot.',
+              name: 'strategySnapshot');
+          return await _compute(
+            ref,
+            strategyName,
+            today,
+            previous,
+            prefs,
+            cacheKey,
+          );
+        }
+        developer.log('Cache hit: $strategyName ($today)',
+            name: 'strategySnapshot');
         return StrategySnapshot(
             date: today, current: current, previous: previous);
       }
@@ -135,10 +262,11 @@ final strategySnapshotProvider =
       final prevStocks = (json['current'] as List)
           .map((e) => SnapshotStock.fromJson(e as Map<String, dynamic>))
           .toList();
-      return await _compute(ref, strategyName, today, prevStocks, prefs, cacheKey);
+      return await _compute(
+          ref, strategyName, today, prevStocks, prefs, cacheKey);
     } catch (e) {
-      developer.log(
-          'Cache parse error for $strategyName: $e', name: 'strategySnapshot');
+      developer.log('Cache parse error for $strategyName: $e',
+          name: 'strategySnapshot');
     }
   }
 
@@ -156,30 +284,17 @@ Future<StrategySnapshot> _compute(
   final allStrategies = ref.read(allStrategiesProvider);
   final strategy = allStrategies.firstWhere(
     (s) => s.name == strategyName,
-    orElse: () => SavedFilter(
-        name: strategyName, weights: {'per': 0.5, 'roe': 0.5}),
+    orElse: () =>
+        SavedFilter(name: strategyName, weights: {'per': 0.5, 'roe': 0.5}),
   );
 
   try {
     final stocks = await ref.read(allStocksForSnapshotProvider.future);
-    final engine = ScoringEngine();
-    final marketStocks = stocks.map((s) => s.toMarketStock()).toList();
-    final scored =
-        engine.calculateScores(stocks: marketStocks, weights: strategy.weights);
-
-    final current = scored
-        .take(strategy.topN)
-        .toList()
-        .asMap()
-        .entries
-        .map((e) => SnapshotStock(
-              ticker: e.value.stock.symbol,
-              name: e.value.stock.name,
-              price: e.value.stock.price,
-              score: e.value.score,
-              rank: e.key + 1,
-            ))
-        .toList();
+    final current = await _buildSnapshotStocksInBackground(
+      stocks: stocks,
+      weights: strategy.weights,
+      topN: strategy.topN,
+    );
 
     final snapshot =
         StrategySnapshot(date: date, current: current, previous: previous);
@@ -192,20 +307,18 @@ Future<StrategySnapshot> _compute(
           'previous': previous.map((s) => s.toJson()).toList(),
         }));
 
-    developer.log(
-        'Computed $strategyName: ${current.length} stocks',
+    developer.log('Computed $strategyName: ${current.length} stocks',
         name: 'strategySnapshot');
     return snapshot;
   } catch (e) {
-    developer.log(
-        'Compute error for $strategyName: $e', name: 'strategySnapshot');
+    developer.log('Compute error for $strategyName: $e',
+        name: 'strategySnapshot');
     return StrategySnapshot(date: date, current: [], previous: previous);
   }
 }
 
 /// 스냅샷 강제 새로고침 (캐시 삭제 후 재계산)
-Future<void> refreshStrategySnapshot(
-    WidgetRef ref, String strategyName) async {
+Future<void> refreshStrategySnapshot(WidgetRef ref, String strategyName) async {
   final prefs = await SharedPreferences.getInstance();
   await prefs.remove(_snapKey(strategyName));
   ref.invalidate(strategySnapshotProvider(strategyName));
