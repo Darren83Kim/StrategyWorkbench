@@ -1,6 +1,5 @@
 ---
 title: Strategy Workbench Privacy Policy
-permalink: /privacy-policy/
 ---
 
 # Strategy Workbench 개인정보처리방침
