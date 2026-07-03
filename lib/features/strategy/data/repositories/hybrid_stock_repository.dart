@@ -4,6 +4,8 @@ import 'package:strategy_workbench/features/strategy/data/repositories/krx_dart_
 import 'package:strategy_workbench/features/strategy/data/repositories/yahoo_stock_repository.dart';
 import 'package:strategy_workbench/features/strategy/data/repositories/kor_investment_repository.dart';
 import 'package:strategy_workbench/features/strategy/data/repositories/mock_stock_repository.dart';
+import 'package:strategy_workbench/features/strategy/data/repositories/nasdaq_stock_repository.dart';
+import 'package:strategy_workbench/features/strategy/data/repositories/naver_stock_repository.dart';
 import 'package:strategy_workbench/features/strategy/data/repositories/stock_universe.dart';
 import 'package:strategy_workbench/features/strategy/domain/entities/stock.dart';
 import 'package:strategy_workbench/features/strategy/domain/repositories/stock_repository.dart';
@@ -12,13 +14,15 @@ import 'dart:developer' as developer;
 
 /// 데이터 소스 우선순위 (2026-03-09 재설계)
 ///
-/// US: Finnhub(1순위) → FMP(2순위) → Yahoo(폴백) → Mock
-/// KR: KRX+DART(1순위) + 한국투자증권(보완) → Mock
+/// US: Finnhub(1순위) → FMP(2순위) → Yahoo(폴백) → Nasdaq quote(키 없는 현재가 보강) → Mock
+/// KR: KRX+DART(1순위) → Naver quote(키 없는 현재가/이름 보강) → 한국투자증권(debug 보완) → Mock
 class HybridStockRepository implements StockRepository {
   final FinnhubStockRepository? _finnhubRepo;
   final FmpStockRepository? _fmpRepo;
   final YahooStockRepository? _yahooRepo;
+  final NasdaqStockRepository _nasdaqRepo;
   final KrxDartStockRepository? _krxDartRepo;
+  final NaverStockRepository _naverRepo;
   final KorInvestmentRepository? _korRepo;
   final MockStockRepository _mockRepo;
   final bool _allowKorInvestmentFallback;
@@ -27,7 +31,9 @@ class HybridStockRepository implements StockRepository {
     FinnhubStockRepository? finnhubRepository,
     FmpStockRepository? fmpRepository,
     YahooStockRepository? yahooRepository,
+    NasdaqStockRepository? nasdaqRepository,
     KrxDartStockRepository? krxDartRepository,
+    NaverStockRepository? naverRepository,
     KorInvestmentRepository? korRepository,
     MockStockRepository? mockRepository,
     bool? allowKorInvestmentFallback,
@@ -36,8 +42,10 @@ class HybridStockRepository implements StockRepository {
         _fmpRepo = fmpRepository ??
             (ApiKeys.isFmpConfigured ? FmpStockRepository() : null),
         _yahooRepo = yahooRepository ?? YahooStockRepository(),
+        _nasdaqRepo = nasdaqRepository ?? NasdaqStockRepository(),
         _krxDartRepo = krxDartRepository ??
             (ApiKeys.isKrxConfigured ? KrxDartStockRepository() : null),
+        _naverRepo = naverRepository ?? NaverStockRepository(),
         _allowKorInvestmentFallback =
             allowKorInvestmentFallback ?? ApiKeys.isKorInvestmentRuntimeEnabled,
         _korRepo = korRepository ??
@@ -60,13 +68,6 @@ class HybridStockRepository implements StockRepository {
   Future<List<Stock>> getAllStocks({bool useMock = false}) async {
     if (useMock) {
       developer.log('Using Mock data (forced)', name: 'HybridStockRepository');
-      return _mockRepo.getStocks();
-    }
-
-    // API 키가 전혀 없으면 Mock 사용 (첫 설치, 키 미설정 상태)
-    if (!ApiKeys.isAnyRealApiConfigured) {
-      developer.log('No API keys configured, using Mock data',
-          name: 'HybridStockRepository');
       return _mockRepo.getStocks();
     }
 
@@ -99,7 +100,7 @@ class HybridStockRepository implements StockRepository {
     return stocks; // 빈 리스트 그대로 반환 (Mock으로 숨기지 않음)
   }
 
-  /// 미국 주식만 조회 (Finnhub → FMP → Yahoo → Mock 순서)
+  /// 미국 주식만 조회 (Finnhub → FMP → Yahoo → Nasdaq quote → Mock 순서)
   Future<List<Stock>> getUsStocks() async {
     final mergedStocks = <String, Stock>{};
 
@@ -147,6 +148,30 @@ class HybridStockRepository implements StockRepository {
       }
     }
 
+    // 4순위: Nasdaq quote (키 없이 현재가/기업명 보강)
+    if (mergedStocks.length < usUniverseTickers.length) {
+      try {
+        developer.log('Trying Nasdaq quote (US 현재가 보강)...',
+            name: 'HybridStockRepository');
+        final stocks = await _nasdaqRepo.getStocks();
+        _mergeStocksInto(mergedStocks, stocks);
+        developer.log('Nasdaq quote contributed ${stocks.length} US stocks',
+            name: 'HybridStockRepository');
+      } catch (e) {
+        developer.log('Nasdaq quote failed: $e',
+            name: 'HybridStockRepository', error: e);
+      }
+    }
+
+    if (mergedStocks.isNotEmpty) {
+      // 전략 점수용 펀더멘탈이 비어 있으면 기존 mock 값을 보조 지표로 채운다.
+      final mockStocks = await _mockRepo.getStocks();
+      _fillExistingStocksFrom(
+        mergedStocks,
+        mockStocks.where((s) => !RegExp(r'^\d+$').hasMatch(s.ticker)).toList(),
+      );
+    }
+
     if (mergedStocks.isNotEmpty) {
       final orderedStocks = _sortStocksByUniverse(
         mergedStocks.values,
@@ -171,7 +196,7 @@ class HybridStockRepository implements StockRepository {
     return [];
   }
 
-  /// 국내 주식만 조회 (KRX+DART + 한국투자증권 보완 → Mock 순서)
+  /// 국내 주식만 조회 (KRX+DART → Naver quote → 한국투자증권 보완 → Mock 순서)
   Future<List<Stock>> getKoreanStocks() async {
     final mergedStocks = <String, Stock>{};
     final hasKrRealSource = _krxDartRepo != null ||
@@ -192,6 +217,19 @@ class HybridStockRepository implements StockRepository {
       }
     }
 
+    // 2순위: Naver quote (키 없이 현재가/종목명 보강)
+    try {
+      developer.log('Trying Naver quote (KR 현재가 보강)...',
+          name: 'HybridStockRepository');
+      final stocks = await _naverRepo.getStocks();
+      _mergeStocksInto(mergedStocks, stocks);
+      developer.log('Naver quote contributed ${stocks.length} Korean stocks',
+          name: 'HybridStockRepository');
+    } catch (e) {
+      developer.log('Naver quote failed: $e',
+          name: 'HybridStockRepository', error: e);
+    }
+
     // 폴백: 한국투자증권 (사용자 키 필요)
     if (_allowKorInvestmentFallback && _korRepo != null) {
       try {
@@ -205,6 +243,15 @@ class HybridStockRepository implements StockRepository {
         developer.log('한국투자증권 failed: $e',
             name: 'HybridStockRepository', error: e);
       }
+    }
+
+    if (mergedStocks.isNotEmpty) {
+      // 전략 점수용 펀더멘탈이 비어 있으면 기존 mock 값을 보조 지표로 채운다.
+      final mockStocks = await _mockRepo.getStocks();
+      _fillExistingStocksFrom(
+        mergedStocks,
+        mockStocks.where((s) => RegExp(r'^\d+$').hasMatch(s.ticker)).toList(),
+      );
     }
 
     if (mergedStocks.isNotEmpty) {
@@ -240,17 +287,21 @@ class HybridStockRepository implements StockRepository {
       final isKorean = RegExp(r'^\d+$').hasMatch(symbol);
 
       if (isKorean) {
-        // KRX+DART → 한국투자증권 → Mock
+        // KRX+DART → Naver quote → 한국투자증권(debug) → Mock
         if (_krxDartRepo != null) {
           final stock = await _krxDartRepo!.getStockByCode(symbol);
-          if (stock != null) return stock;
+          if (stock != null) return await _fillFromMockIfNeeded(stock);
+        }
+        final naverStock = await _naverRepo.getStockByCode(symbol);
+        if (naverStock != null) {
+          return await _fillFromMockIfNeeded(naverStock);
         }
         if (_korRepo != null && _allowKorInvestmentFallback) {
           final stock = await _korRepo!.getStockByCode(symbol);
-          if (stock != null) return stock;
+          if (stock != null) return await _fillFromMockIfNeeded(stock);
         }
       } else {
-        // Finnhub → FMP → Yahoo → Mock
+        // Finnhub → FMP → Yahoo → Nasdaq quote → Mock
         if (_finnhubRepo != null) {
           final stock = await _finnhubRepo!.getStockByTicker(symbol);
           if (stock != null) return stock;
@@ -262,6 +313,10 @@ class HybridStockRepository implements StockRepository {
         if (_yahooRepo != null) {
           final stock = await _yahooRepo!.getStockByTicker(symbol);
           if (stock != null) return stock;
+        }
+        final nasdaqStock = await _nasdaqRepo.getStockByTicker(symbol);
+        if (nasdaqStock != null) {
+          return await _fillFromMockIfNeeded(nasdaqStock);
         }
       }
 
@@ -282,17 +337,32 @@ class HybridStockRepository implements StockRepository {
       'fmpConfigured': ApiKeys.isFmpConfigured,
       'fmpAvailable': _fmpRepo != null,
       'yahooAvailable': _yahooRepo != null,
+      'nasdaqQuoteAvailable': true,
       'krxDartConfigured': ApiKeys.isKrxConfigured,
       'krxDartAvailable': _krxDartRepo != null,
+      'naverQuoteAvailable': true,
       'korInvestmentConfigured': ApiKeys.isKorInvestmentConfigured,
       'korInvestmentRuntimeEnabled': _allowKorInvestmentFallback,
       'korInvestmentAvailable': _korRepo != null,
       'dartConfigured': ApiKeys.isDartConfigured,
       'priority': {
-        'US': 'Finnhub → FMP → Yahoo → Mock',
-        'KR': 'KRX+DART + 한국투자증권 → Mock',
+        'US': 'Finnhub → FMP → Yahoo → Nasdaq quote → Mock',
+        'KR': 'KRX+DART → Naver quote → 한국투자증권(debug) → Mock',
       },
     };
+  }
+
+  Future<Stock> _fillFromMockIfNeeded(Stock stock) async {
+    if (stock.per > 0 && stock.roe > 0 && stock.dividendYield > 0) {
+      return stock;
+    }
+
+    final fallback = await _mockRepo.getStockByTicker(stock.ticker);
+    if (fallback == null) {
+      return stock;
+    }
+
+    return _fillMissingFields(stock, fallback);
   }
 }
 
@@ -302,6 +372,17 @@ void _mergeStocksInto(Map<String, Stock> target, List<Stock> incoming) {
     final existing = target[key];
     target[key] =
         existing == null ? stock : _fillMissingFields(existing, stock);
+  }
+}
+
+void _fillExistingStocksFrom(Map<String, Stock> target, List<Stock> incoming) {
+  for (final stock in incoming) {
+    final key = stock.ticker.toUpperCase();
+    final existing = target[key];
+    if (existing == null) {
+      continue;
+    }
+    target[key] = _fillMissingFields(existing, stock);
   }
 }
 

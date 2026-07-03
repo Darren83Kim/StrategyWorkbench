@@ -3,10 +3,12 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:strategy_workbench/core/l10n/app_strings.dart';
+import 'package:strategy_workbench/core/market/market_classification.dart';
 import 'package:strategy_workbench/core/providers/daily_brief_providers.dart';
 import 'package:strategy_workbench/core/providers/filter_providers.dart';
 import 'package:strategy_workbench/core/providers/language_provider.dart';
 import 'package:strategy_workbench/core/providers/snapshot_providers.dart';
+import 'package:strategy_workbench/core/providers/stock_detail_providers.dart';
 import 'package:strategy_workbench/shared/widgets/glass_container.dart';
 
 class DashboardScreen extends ConsumerStatefulWidget {
@@ -368,9 +370,15 @@ class _DailyBriefCard extends StatelessWidget {
                     children: brief.topPicks
                         .map(
                           (stock) => _BriefChip(
-                            title: stock.ticker,
-                            subtitle:
-                                '#${stock.rank} • \$${stock.price.toStringAsFixed(2)}',
+                            title: resolveInstrumentName(
+                              stock.ticker,
+                              stock.name,
+                            ),
+                            subtitleWidget: _BriefPriceSubtitle(
+                              rank: stock.rank,
+                              ticker: stock.ticker,
+                              fallbackPrice: stock.price,
+                            ),
                             icon: Icons.auto_awesome,
                             accent: const Color(0xFF2563EB),
                             onTap: () =>
@@ -390,7 +398,10 @@ class _DailyBriefCard extends StatelessWidget {
                     children: [
                       ...brief.entered.take(3).map(
                             (stock) => _BriefChip(
-                              title: stock.ticker,
+                              title: resolveInstrumentName(
+                                stock.ticker,
+                                stock.name,
+                              ),
                               subtitle: s.dailyBriefNewIn,
                               icon: Icons.arrow_upward,
                               accent: const Color(0xFF10B981),
@@ -400,7 +411,10 @@ class _DailyBriefCard extends StatelessWidget {
                           ),
                       ...brief.exited.take(3).map(
                             (stock) => _BriefChip(
-                              title: stock.ticker,
+                              title: resolveInstrumentName(
+                                stock.ticker,
+                                stock.name,
+                              ),
                               subtitle: s.dailyBriefExited,
                               icon: Icons.arrow_downward,
                               accent: const Color(0xFFFB923C),
@@ -417,16 +431,17 @@ class _DailyBriefCard extends StatelessWidget {
                   const SizedBox(height: 8),
                   ...brief.riskHoldings.take(3).map(
                         (risk) => _BriefInsightRow(
-                          title: risk.item.ticker,
+                          title: resolveInstrumentName(
+                            risk.item.ticker,
+                            risk.item.name,
+                          ),
                           subtitle: risk.recentlyExited
                               ? s.dailyBriefRecentlyExited
                               : s.dailyBriefOutsideStrategy,
-                          trailing: Text(
-                            '${risk.item.quantity.toStringAsFixed(0)} @ \$${risk.item.currentPrice.toStringAsFixed(2)}',
-                            style: const TextStyle(
-                              color: Colors.white70,
-                              fontSize: 11,
-                            ),
+                          trailing: _HoldingPriceText(
+                            ticker: risk.item.ticker,
+                            quantity: risk.item.quantity,
+                            fallbackPrice: risk.item.currentPrice,
                           ),
                           onTap: () =>
                               context.push('/market/${risk.item.ticker}'),
@@ -439,9 +454,15 @@ class _DailyBriefCard extends StatelessWidget {
                   const SizedBox(height: 8),
                   ...brief.movers.map(
                     (mover) => _BriefInsightRow(
-                      title: mover.stock.ticker,
-                      subtitle:
-                          '#${mover.stock.rank} • \$${mover.stock.price.toStringAsFixed(2)}',
+                      title: resolveInstrumentName(
+                        mover.stock.ticker,
+                        mover.stock.name,
+                      ),
+                      subtitleWidget: _BriefPriceSubtitle(
+                        rank: mover.stock.rank,
+                        ticker: mover.stock.ticker,
+                        fallbackPrice: mover.stock.price,
+                      ),
                       trailing: _RankBadge(change: mover.change),
                       onTap: () =>
                           context.push('/market/${mover.stock.ticker}'),
@@ -531,14 +552,16 @@ class _BriefSectionTitle extends StatelessWidget {
 
 class _BriefChip extends StatelessWidget {
   final String title;
-  final String subtitle;
+  final String? subtitle;
+  final Widget? subtitleWidget;
   final IconData icon;
   final Color accent;
   final VoidCallback onTap;
 
   const _BriefChip({
     required this.title,
-    required this.subtitle,
+    this.subtitle,
+    this.subtitleWidget,
     required this.icon,
     required this.accent,
     required this.onTap,
@@ -574,13 +597,14 @@ class _BriefChip extends StatelessWidget {
                       fontWeight: FontWeight.bold,
                     ),
                   ),
-                  Text(
-                    subtitle,
-                    style: const TextStyle(
-                      color: Colors.white60,
-                      fontSize: 10,
-                    ),
-                  ),
+                  subtitleWidget ??
+                      Text(
+                        subtitle ?? '',
+                        style: const TextStyle(
+                          color: Colors.white60,
+                          fontSize: 10,
+                        ),
+                      ),
                 ],
               ),
             ],
@@ -591,15 +615,110 @@ class _BriefChip extends StatelessWidget {
   }
 }
 
+class _BriefPriceSubtitle extends StatelessWidget {
+  final int rank;
+  final String ticker;
+  final double fallbackPrice;
+
+  const _BriefPriceSubtitle({
+    required this.rank,
+    required this.ticker,
+    required this.fallbackPrice,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    const style = TextStyle(
+      color: Colors.white60,
+      fontSize: 10,
+    );
+
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Text('#$rank • ', style: style),
+        _LivePriceText(
+          ticker: ticker,
+          fallbackPrice: fallbackPrice,
+          style: style,
+        ),
+      ],
+    );
+  }
+}
+
+class _LivePriceText extends ConsumerWidget {
+  final String ticker;
+  final double fallbackPrice;
+  final TextStyle style;
+
+  const _LivePriceText({
+    required this.ticker,
+    required this.fallbackPrice,
+    required this.style,
+  });
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final detailAsync = ref.watch(stockDetailProvider(ticker));
+    final detail = detailAsync.maybeWhen(
+      data: (value) => value,
+      orElse: () => null,
+    );
+    final liveStock = detail?.stock;
+    final displayTicker = liveStock?.ticker ?? ticker;
+    final price = liveStock?.price ?? fallbackPrice;
+
+    return Text(
+      formatMarketPrice(displayTicker, price),
+      style: style,
+    );
+  }
+}
+
+class _HoldingPriceText extends StatelessWidget {
+  final String ticker;
+  final double quantity;
+  final double fallbackPrice;
+
+  const _HoldingPriceText({
+    required this.ticker,
+    required this.quantity,
+    required this.fallbackPrice,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    const style = TextStyle(
+      color: Colors.white70,
+      fontSize: 11,
+    );
+
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Text('${quantity.toStringAsFixed(0)} @ ', style: style),
+        _LivePriceText(
+          ticker: ticker,
+          fallbackPrice: fallbackPrice,
+          style: style,
+        ),
+      ],
+    );
+  }
+}
+
 class _BriefInsightRow extends StatelessWidget {
   final String title;
-  final String subtitle;
+  final String? subtitle;
+  final Widget? subtitleWidget;
   final Widget trailing;
   final VoidCallback onTap;
 
   const _BriefInsightRow({
     required this.title,
-    required this.subtitle,
+    this.subtitle,
+    this.subtitleWidget,
     required this.trailing,
     required this.onTap,
   });
@@ -628,14 +747,15 @@ class _BriefInsightRow extends StatelessWidget {
                       ),
                     ),
                     const SizedBox(height: 2),
-                    Text(
-                      subtitle,
-                      style: const TextStyle(
-                        color: Colors.white54,
-                        fontSize: 11,
-                        height: 1.35,
-                      ),
-                    ),
+                    subtitleWidget ??
+                        Text(
+                          subtitle ?? '',
+                          style: const TextStyle(
+                            color: Colors.white54,
+                            fontSize: 11,
+                            height: 1.35,
+                          ),
+                        ),
                   ],
                 ),
               ),
@@ -877,6 +997,8 @@ class _WatchedRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final displayName = resolveInstrumentName(stock.ticker, stock.name);
+
     return InkWell(
       onTap: onTap,
       child: Padding(
@@ -931,7 +1053,7 @@ class _WatchedRow extends StatelessWidget {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
-                    stock.ticker,
+                    displayName,
                     style: TextStyle(
                       color: isExited ? Colors.white38 : Colors.white,
                       fontWeight: FontWeight.bold,
@@ -939,7 +1061,7 @@ class _WatchedRow extends StatelessWidget {
                     ),
                   ),
                   Text(
-                    stock.name,
+                    stock.ticker,
                     style: const TextStyle(color: Colors.white38, fontSize: 10),
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
@@ -949,8 +1071,9 @@ class _WatchedRow extends StatelessWidget {
             ),
 
             // 가격
-            Text(
-              '\$${stock.price.toStringAsFixed(2)}',
+            _LivePriceText(
+              ticker: stock.ticker,
+              fallbackPrice: stock.price,
               style: TextStyle(
                 color: isExited ? Colors.white38 : Colors.white70,
                 fontSize: 12,

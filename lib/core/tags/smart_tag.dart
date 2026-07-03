@@ -10,7 +10,7 @@ class SmartTagger {
   List<String> generateTags(Stock stock) {
     final tags = <String>[];
     try {
-      if (stock.per < 10) tags.add('#저평가');
+      if (stock.per > 0 && stock.per < 10) tags.add('#저평가');
     } catch (_) {}
     try {
       if (stock.roe > 15) tags.add('#우량주');

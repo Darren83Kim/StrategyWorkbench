@@ -1,7 +1,8 @@
-import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:strategy_workbench/core/market/market_classification.dart';
 import 'package:strategy_workbench/core/providers/filter_providers.dart';
+import 'package:strategy_workbench/core/providers/portfolio_providers.dart';
 import 'package:strategy_workbench/core/providers/stock_detail_providers.dart';
 import 'package:strategy_workbench/core/providers/stock_providers.dart';
 import 'package:strategy_workbench/core/providers/snapshot_providers.dart';
@@ -26,10 +27,18 @@ class _FakeHybridStockRepository extends HybridStockRepository {
   }
 }
 
+class _StaticPortfolioNotifier extends PortfolioNotifier {
+  _StaticPortfolioNotifier(this.items);
+
+  final List<PortfolioItem> items;
+
+  @override
+  List<PortfolioItem> build() => items;
+}
+
 void main() {
   setUpAll(() async {
     TestWidgetsFlutterBinding.ensureInitialized();
-    await dotenv.load(fileName: '.env');
   });
 
   group('stockDetailProvider', () {
@@ -73,6 +82,46 @@ void main() {
       expect(detail.normalizedMetrics.keys, contains('per'));
     });
 
+    test('prefers live repository detail over a stale cached universe',
+        () async {
+      final cachedStocks = [
+        Stock(
+          ticker: '000660',
+          name: 'SK하이닉스',
+          price: 196000,
+          per: 13.1,
+          roe: 38.5,
+          dividendYield: 0.9,
+          lastUpdated: DateTime(2026, 4, 17),
+        ),
+      ];
+      final liveStock = Stock(
+        ticker: '000660',
+        name: 'SK하이닉스',
+        price: 2723000,
+        per: 13.1,
+        roe: 38.5,
+        dividendYield: 0.9,
+        lastUpdated: DateTime(2026, 6, 26),
+      );
+
+      final container = ProviderContainer(
+        overrides: [
+          allStocksForSnapshotProvider
+              .overrideWith((ref) async => cachedStocks),
+          hybridRepositoryProvider.overrideWith(
+            (ref) => _FakeHybridStockRepository(stockToReturn: liveStock),
+          ),
+        ],
+      );
+      addTearDown(container.dispose);
+
+      final detail = await container.read(stockDetailProvider('000660').future);
+
+      expect(detail, isNotNull);
+      expect(detail!.stock.price, 2723000);
+    });
+
     test('falls back to repository lookup when stock is missing from cache',
         () async {
       final fallbackStock = Stock(
@@ -100,6 +149,40 @@ void main() {
       expect(detail, isNotNull);
       expect(detail!.stock.ticker, 'TSLA');
       expect(detail.peerCount, 0);
+    });
+
+    test('falls back to a portfolio holding when market data is unavailable',
+        () async {
+      final container = ProviderContainer(
+        overrides: [
+          allStocksForSnapshotProvider.overrideWith((ref) async => []),
+          hybridRepositoryProvider.overrideWith(
+            (ref) => _FakeHybridStockRepository(),
+          ),
+          portfolioProvider.overrideWith(
+            () => _StaticPortfolioNotifier(
+              const [
+                PortfolioItem(
+                  ticker: '442580',
+                  name: '442580',
+                  quantity: 200,
+                  avgPrice: 55550,
+                  currentPrice: 55550,
+                ),
+              ],
+            ),
+          ),
+        ],
+      );
+      addTearDown(container.dispose);
+
+      final detail = await container.read(stockDetailProvider('442580').future);
+
+      expect(detail, isNotNull);
+      expect(detail!.stock.ticker, '442580');
+      expect(detail.stock.name, 'PLUS 글로벌HBM반도체');
+      expect(detail.stock.price, 55550);
+      expect(detail.tags, isEmpty);
     });
 
     test('returns null when the symbol is unavailable everywhere', () async {
@@ -138,6 +221,26 @@ void main() {
 
       expect(stock, isNotNull);
       expect(stock!.name, 'NVIDIA');
+    });
+
+    test('findStockBySymbol pads omitted leading zeros for Korean codes', () {
+      final stocks = [
+        Stock(
+          ticker: '033780',
+          name: 'KT&G',
+          price: 111500,
+          per: 10.5,
+          roe: 14.2,
+          dividendYield: 7.8,
+          lastUpdated: DateTime(2026, 4, 17),
+        ),
+      ];
+
+      final stock = findStockBySymbol(stocks, '33780');
+
+      expect(normalizeTickerInput('33780'), '033780');
+      expect(stock, isNotNull);
+      expect(stock!.ticker, '033780');
     });
 
     test('filterTransactionsByTicker filters and sorts by date descending', () {

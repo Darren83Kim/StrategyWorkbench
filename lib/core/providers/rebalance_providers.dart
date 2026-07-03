@@ -1,4 +1,5 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:strategy_workbench/core/market/market_classification.dart';
 import 'package:strategy_workbench/core/providers/filter_providers.dart';
 import 'package:strategy_workbench/core/providers/portfolio_providers.dart';
 import 'package:strategy_workbench/core/providers/snapshot_providers.dart';
@@ -116,7 +117,7 @@ RebalanceCoach buildRebalanceCoach({
           (item) => RebalanceSuggestion(
             type: RebalanceSuggestionType.review,
             ticker: item.ticker,
-            headline: '${item.ticker} 점검',
+            headline: '${resolveInstrumentName(item.ticker, item.name)} 점검',
             reason: '현재 활성 전략 Top ${strategy.topN} 밖에 있어 보유 이유를 다시 확인할 시점입니다.',
             supportingLabel:
                 '보유 ${item.quantity.toStringAsFixed(0)}주 · \$${item.currentValue.toStringAsFixed(2)}',
@@ -126,7 +127,8 @@ RebalanceCoach buildRebalanceCoach({
           (weighted) => RebalanceSuggestion(
             type: RebalanceSuggestionType.trim,
             ticker: weighted.item.ticker,
-            headline: '${weighted.item.ticker} 비중 점검',
+            headline:
+                '${resolveInstrumentName(weighted.item.ticker, weighted.item.name)} 비중 점검',
             reason:
                 '포트폴리오 비중 ${(weighted.portfolioWeight * 100).toStringAsFixed(0)}%로 집중도가 높습니다.',
             supportingLabel:
@@ -137,7 +139,8 @@ RebalanceCoach buildRebalanceCoach({
           (stock) => RebalanceSuggestion(
             type: RebalanceSuggestionType.add,
             ticker: stock.ticker,
-            headline: '${stock.ticker} 편입 후보',
+            headline:
+                '${resolveInstrumentName(stock.ticker, stock.name)} 편입 후보',
             reason: '활성 전략에서 #${stock.rank}에 올라 있지만 아직 보유하고 있지 않습니다.',
             supportingLabel: '전략 점수 ${stock.score.toStringAsFixed(1)}',
           ),

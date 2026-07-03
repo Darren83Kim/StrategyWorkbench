@@ -1,6 +1,7 @@
 import 'package:fl_chart/fl_chart.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:strategy_workbench/core/market/market_classification.dart';
 import 'package:strategy_workbench/core/providers/language_provider.dart';
 import 'package:strategy_workbench/core/providers/stock_detail_providers.dart';
 import 'package:strategy_workbench/shared/widgets/glass_container.dart';
@@ -44,7 +45,6 @@ class StockDetailScreen extends ConsumerWidget {
           }
 
           return _StockDetailContent(
-            symbol: symbol,
             detail: detail,
           );
         },
@@ -54,11 +54,9 @@ class StockDetailScreen extends ConsumerWidget {
 }
 
 class _StockDetailContent extends ConsumerWidget {
-  final String symbol;
   final StockDetailViewModel detail;
 
   const _StockDetailContent({
-    required this.symbol,
     required this.detail,
   });
 
@@ -70,8 +68,11 @@ class _StockDetailContent extends ConsumerWidget {
     final activeInsightAsync =
         ref.watch(activeStockInsightProvider(detail.stock.ticker));
     final stock = detail.stock;
+    final displayName = resolveInstrumentName(stock.ticker, stock.name);
     final normalizedMetrics = detail.normalizedMetrics;
     final tags = detail.tags;
+    final hasMetricData =
+        stock.per > 0 || stock.roe > 0 || stock.dividendYield > 0;
 
     return SingleChildScrollView(
       padding: const EdgeInsets.all(16),
@@ -93,7 +94,7 @@ class _StockDetailContent extends ConsumerWidget {
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
                             Text(
-                              stock.name,
+                              displayName,
                               style: const TextStyle(
                                 color: Colors.white,
                                 fontSize: 18,
@@ -133,7 +134,7 @@ class _StockDetailContent extends ConsumerWidget {
                   ),
                   const SizedBox(height: 12),
                   Text(
-                    '\$${stock.price.toStringAsFixed(2)}',
+                    formatMarketPrice(stock.ticker, stock.price),
                     style: const TextStyle(
                       color: Colors.white,
                       fontSize: 28,
@@ -145,11 +146,21 @@ class _StockDetailContent extends ConsumerWidget {
                     spacing: 8,
                     runSpacing: 8,
                     children: [
-                      _MetricBadge('PER', stock.per.toStringAsFixed(1)),
-                      _MetricBadge('ROE', '${stock.roe.toStringAsFixed(1)}%'),
+                      _MetricBadge(
+                        'PER',
+                        stock.per > 0 ? stock.per.toStringAsFixed(1) : '없음',
+                      ),
+                      _MetricBadge(
+                        'ROE',
+                        stock.roe > 0
+                            ? '${stock.roe.toStringAsFixed(1)}%'
+                            : '없음',
+                      ),
                       _MetricBadge(
                         '배당',
-                        '${stock.dividendYield.toStringAsFixed(1)}%',
+                        stock.dividendYield > 0
+                            ? '${stock.dividendYield.toStringAsFixed(1)}%'
+                            : '없음',
                       ),
                     ],
                   ),
@@ -315,63 +326,66 @@ class _StockDetailContent extends ConsumerWidget {
                   ),
                   const SizedBox(height: 4),
                   Text(
-                    '$symbol 기준 실데이터 비교',
+                    '$displayName 기준 실데이터 비교',
                     style: const TextStyle(color: Colors.white38, fontSize: 11),
                   ),
                   const SizedBox(height: 8),
-                  SizedBox(
-                    height: 260,
-                    child: RadarChart(
-                      RadarChartData(
-                        dataSets: [
-                          RadarDataSet(
-                            dataEntries: detail.metrics
-                                .map(
-                                  (metric) => RadarEntry(
-                                    value: normalizedMetrics[metric] ?? 0.0,
-                                  ),
-                                )
-                                .toList(),
-                            borderColor: const Color(0xFF10B981),
-                            fillColor: const Color(0x3310B981),
+                  if (!hasMetricData)
+                    const _MetricUnavailableMessage()
+                  else
+                    SizedBox(
+                      height: 260,
+                      child: RadarChart(
+                        RadarChartData(
+                          dataSets: [
+                            RadarDataSet(
+                              dataEntries: detail.metrics
+                                  .map(
+                                    (metric) => RadarEntry(
+                                      value: normalizedMetrics[metric] ?? 0.0,
+                                    ),
+                                  )
+                                  .toList(),
+                              borderColor: const Color(0xFF10B981),
+                              fillColor: const Color(0x3310B981),
+                            ),
+                          ],
+                          radarBackgroundColor: Colors.transparent,
+                          titleTextStyle: const TextStyle(
+                            color: Colors.white70,
+                            fontSize: 12,
                           ),
-                        ],
-                        radarBackgroundColor: Colors.transparent,
-                        titleTextStyle: const TextStyle(
-                          color: Colors.white70,
-                          fontSize: 12,
-                        ),
-                        getTitle: (index, angle) {
-                          switch (index) {
-                            case 0:
-                              return RadarChartTitle(
-                                text:
-                                    'PER\n${normalizedMetrics['per']?.toStringAsFixed(2) ?? '-'}',
-                              );
-                            case 1:
-                              return RadarChartTitle(
-                                text:
-                                    'ROE\n${normalizedMetrics['roe']?.toStringAsFixed(2) ?? '-'}',
-                              );
-                            case 2:
-                              return RadarChartTitle(
-                                text:
-                                    '배당\n${normalizedMetrics['dividendYield']?.toStringAsFixed(2) ?? '-'}',
-                              );
-                            default:
-                              return const RadarChartTitle(text: '');
-                          }
-                        },
-                        tickCount: 4,
-                        tickBorderData: const BorderSide(
-                          color: Color(0x26FFFFFF),
-                        ),
-                        gridBorderData: const BorderSide(
-                          color: Color(0x33FFFFFF),
+                          getTitle: (index, angle) {
+                            switch (index) {
+                              case 0:
+                                return RadarChartTitle(
+                                  text:
+                                      'PER\n${normalizedMetrics['per']?.toStringAsFixed(2) ?? '-'}',
+                                );
+                              case 1:
+                                return RadarChartTitle(
+                                  text:
+                                      'ROE\n${normalizedMetrics['roe']?.toStringAsFixed(2) ?? '-'}',
+                                );
+                              case 2:
+                                return RadarChartTitle(
+                                  text:
+                                      '배당\n${normalizedMetrics['dividendYield']?.toStringAsFixed(2) ?? '-'}',
+                                );
+                              default:
+                                return const RadarChartTitle(text: '');
+                            }
+                          },
+                          tickCount: 4,
+                          tickBorderData: const BorderSide(
+                            color: Color(0x26FFFFFF),
+                          ),
+                          gridBorderData: const BorderSide(
+                            color: Color(0x33FFFFFF),
+                          ),
                         ),
                       ),
                     ),
-                  ),
                 ],
               ),
             ),
@@ -418,6 +432,31 @@ class _StockDetailContent extends ConsumerWidget {
             ),
           ),
         ],
+      ),
+    );
+  }
+}
+
+class _MetricUnavailableMessage extends StatelessWidget {
+  const _MetricUnavailableMessage();
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: const Color(0xFF111827),
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: const Color(0xFF334155)),
+      ),
+      child: const Text(
+        '현재가와 종목명은 확인됐지만 PER, ROE, 배당 지표는 아직 확보되지 않았습니다. 지표 차트는 펀더멘탈 데이터가 들어오면 표시됩니다.',
+        style: TextStyle(
+          color: Colors.white70,
+          fontSize: 12,
+          height: 1.5,
+        ),
       ),
     );
   }

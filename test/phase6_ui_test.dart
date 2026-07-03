@@ -9,6 +9,8 @@ import 'package:strategy_workbench/core/providers/language_provider.dart';
 import 'package:strategy_workbench/features/dashboard/presentation/dashboard_screen.dart';
 import 'package:strategy_workbench/core/providers/portfolio_providers.dart';
 import 'package:strategy_workbench/core/providers/snapshot_providers.dart';
+import 'package:strategy_workbench/core/providers/stock_detail_providers.dart';
+import 'package:strategy_workbench/features/strategy/domain/entities/stock.dart';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
@@ -118,6 +120,29 @@ void main() {
           stringsProvider.overrideWith((ref) => AppStrings.ko),
           activeStrategyProvider.overrideWith((ref) => strategy),
           dailyBriefProvider.overrideWith((ref) async => brief),
+          stockDetailProvider.overrideWith((ref, symbol) async {
+            final prices = {
+              'AAPL': 199.0,
+              'MSFT': 420.0,
+              'OLD': 81.0,
+            };
+            final price = prices[symbol] ?? 100.0;
+            return StockDetailViewModel(
+              stock: Stock(
+                ticker: symbol,
+                name: symbol,
+                price: price,
+                per: 20,
+                roe: 15,
+                dividendYield: 1,
+                lastUpdated: DateTime(2026, 6, 26),
+              ),
+              normalizedMetrics: const {},
+              metrics: const [],
+              tags: const [],
+              peerCount: 0,
+            );
+          }),
         ],
         child: const MaterialApp(
           home: DashboardScreen(),
@@ -131,7 +156,8 @@ void main() {
     expect(find.text(AppStrings.ko.dailyBriefTopPicks), findsOneWidget);
     expect(find.text(AppStrings.ko.dailyBriefRiskHoldings),
         findsAtLeastNWidgets(1));
-    expect(find.text('AAPL'), findsAtLeastNWidgets(1));
-    expect(find.text('OLD'), findsAtLeastNWidgets(1));
+    expect(find.text('Apple'), findsAtLeastNWidgets(1));
+    expect(find.textContaining(r'$199.00'), findsOneWidget);
+    expect(find.text('Old Co'), findsAtLeastNWidgets(1));
   });
 }

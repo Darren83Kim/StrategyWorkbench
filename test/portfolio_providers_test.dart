@@ -74,6 +74,51 @@ void main() {
       expect(items.single.currentPrice, 415.25);
     });
 
+    test('uses known Korean instrument names when transaction has only a code',
+        () {
+      final transactions = [
+        model.Transaction(
+          ticker: '442580',
+          type: model.TransactionType.BUY,
+          price: 55550,
+          quantity: 200,
+          dateTime: DateTime(2026, 6, 26, 9),
+        ),
+      ];
+
+      final items = buildPortfolioFromTransactions(transactions);
+
+      expect(items, hasLength(1));
+      expect(items.single.ticker, '442580');
+      expect(items.single.name, 'PLUS 글로벌HBM반도체');
+    });
+
+    test('resolves KOSDAQ and ETF names from known instrument map', () {
+      final transactions = [
+        model.Transaction(
+          ticker: '089030',
+          type: model.TransactionType.BUY,
+          price: 56885,
+          quantity: 153,
+          dateTime: DateTime(2026, 6, 29, 9),
+        ),
+        model.Transaction(
+          ticker: '486450',
+          type: model.TransactionType.BUY,
+          price: 25000,
+          quantity: 300,
+          dateTime: DateTime(2026, 6, 29, 10),
+        ),
+      ];
+
+      final items = buildPortfolioFromTransactions(transactions);
+
+      expect(items.map((item) => item.name), [
+        '테크윙',
+        'SOL 미국AI전력인프라',
+      ]);
+    });
+
     test('drops holdings whose net quantity becomes zero', () {
       final transactions = [
         model.Transaction(

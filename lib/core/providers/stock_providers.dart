@@ -1,6 +1,7 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:hive_flutter/hive_flutter.dart';
 import 'package:intl/intl.dart';
+import 'package:strategy_workbench/core/cache/stock_cache_keys.dart';
 import 'package:strategy_workbench/features/strategy/data/repositories/hybrid_stock_repository.dart';
 import 'package:strategy_workbench/features/strategy/domain/entities/stock.dart';
 import 'package:strategy_workbench/core/scoring/scoring_engine.dart';
@@ -35,14 +36,12 @@ class WeightsNotifier extends Notifier<Map<String, double>> {
   void set(Map<String, double> weights) => state = weights;
 }
 
-final weightsProvider =
-    NotifierProvider<WeightsNotifier, Map<String, double>>(
+final weightsProvider = NotifierProvider<WeightsNotifier, Map<String, double>>(
   WeightsNotifier.new,
 );
 
 // ── 원본 Strategy Stock 리스트 (Hive 캐시 → API 폴백) ──
-final stockListProvider =
-    FutureProvider.autoDispose<List<Stock>>((ref) async {
+final stockListProvider = FutureProvider.autoDispose<List<Stock>>((ref) async {
   final repo = ref.watch(hybridRepositoryProvider);
   final filter = ref.watch(marketFilterProvider);
 
@@ -50,9 +49,10 @@ final stockListProvider =
   try {
     final settings = Hive.box('settings');
     final lastUpdate = settings.get('last_update_date');
+    final cachedVersion = settings.get(stockCacheVersionKey);
     final today = DateFormat('yyyy-MM-dd').format(DateTime.now());
 
-    if (lastUpdate == today) {
+    if (lastUpdate == today && cachedVersion == stockCacheVersion) {
       final stockCache = Hive.box('stock_cache');
       if (stockCache.isNotEmpty) {
         final cachedStocks = <Stock>[];
@@ -91,13 +91,9 @@ final stockListProvider =
 List<Stock> _filterStocks(List<Stock> stocks, MarketFilter filter) {
   switch (filter) {
     case MarketFilter.us:
-      return stocks
-          .where((s) => !RegExp(r'^\d+$').hasMatch(s.ticker))
-          .toList();
+      return stocks.where((s) => !RegExp(r'^\d+$').hasMatch(s.ticker)).toList();
     case MarketFilter.korea:
-      return stocks
-          .where((s) => RegExp(r'^\d+$').hasMatch(s.ticker))
-          .toList();
+      return stocks.where((s) => RegExp(r'^\d+$').hasMatch(s.ticker)).toList();
     case MarketFilter.hybrid:
       return stocks;
   }
@@ -119,3 +115,14 @@ final dataSourceStatusProvider = Provider<Map<String, dynamic>>((ref) {
   final repo = ref.watch(hybridRepositoryProvider);
   return repo.getStatus();
 });
+
+Future<void> resetStockCacheDate() async {
+  try {
+    final settings = Hive.box('settings');
+    await settings.delete('last_update_date');
+    await settings.delete(stockCacheVersionKey);
+  } catch (e) {
+    developer.log('Failed to reset stock cache date: $e',
+        name: 'stockProviders');
+  }
+}

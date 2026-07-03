@@ -1,6 +1,7 @@
 import 'dart:developer' as developer;
 
 import 'package:intl/intl.dart';
+import 'package:strategy_workbench/core/cache/stock_cache_keys.dart';
 import 'package:strategy_workbench/core/network/hive_service.dart';
 import 'package:strategy_workbench/features/strategy/domain/repositories/stock_repository.dart';
 
@@ -17,13 +18,15 @@ class DataSyncService {
   Future<void> syncStocksIfNeeded() async {
     final settings = _hiveService.settings;
     final lastUpdateDateString = settings.get('last_update_date');
+    final cachedVersion = settings.get(stockCacheVersionKey);
     final todayString = DateFormat('yyyy-MM-dd').format(DateTime.now());
 
     developer.log(
-        'Last update date: $lastUpdateDateString, Today: $todayString',
+        'Last update date: $lastUpdateDateString, Today: $todayString, Cache version: $cachedVersion',
         name: 'DataSyncService');
 
-    if (lastUpdateDateString != todayString) {
+    if (lastUpdateDateString != todayString ||
+        cachedVersion != stockCacheVersion) {
       developer.log('Date is different. Syncing stocks...',
           name: 'DataSyncService');
 
@@ -43,6 +46,7 @@ class DataSyncService {
       await stockCache.putAll(stockMap);
 
       await settings.put('last_update_date', todayString);
+      await settings.put(stockCacheVersionKey, stockCacheVersion);
 
       developer.log(
           'Sync complete. ${stocks.length} stocks cached. New update date: $todayString',

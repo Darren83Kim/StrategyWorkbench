@@ -1,4 +1,3 @@
-import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:strategy_workbench/features/strategy/data/repositories/finnhub_stock_repository.dart';
 import 'package:strategy_workbench/features/strategy/data/repositories/fmp_stock_repository.dart';
@@ -6,6 +5,7 @@ import 'package:strategy_workbench/features/strategy/data/repositories/hybrid_st
 import 'package:strategy_workbench/features/strategy/data/repositories/kor_investment_repository.dart';
 import 'package:strategy_workbench/features/strategy/data/repositories/krx_dart_stock_repository.dart';
 import 'package:strategy_workbench/features/strategy/data/repositories/mock_stock_repository.dart';
+import 'package:strategy_workbench/features/strategy/data/repositories/nasdaq_stock_repository.dart';
 import 'package:strategy_workbench/features/strategy/data/repositories/yahoo_stock_repository.dart';
 import 'package:strategy_workbench/features/strategy/domain/entities/stock.dart';
 
@@ -43,6 +43,22 @@ class _FakeFmpStockRepository extends FmpStockRepository {
 
 class _FakeYahooStockRepository extends YahooStockRepository {
   _FakeYahooStockRepository(this.stocksByTicker);
+
+  final Map<String, Stock> stocksByTicker;
+
+  @override
+  Future<List<Stock>> getStocks({List<String> tickers = const []}) async {
+    return stocksByTicker.values.toList();
+  }
+
+  @override
+  Future<Stock?> getStockByTicker(String ticker) async {
+    return stocksByTicker[ticker];
+  }
+}
+
+class _FakeNasdaqStockRepository extends NasdaqStockRepository {
+  _FakeNasdaqStockRepository(this.stocksByTicker);
 
   final Map<String, Stock> stocksByTicker;
 
@@ -131,7 +147,6 @@ Stock stock({
 void main() {
   setUpAll(() async {
     TestWidgetsFlutterBinding.ensureInitialized();
-    await dotenv.load(fileName: '.env');
   });
 
   test('getUsStocks merges Finnhub primary with FMP and Yahoo fallbacks',
@@ -167,14 +182,33 @@ void main() {
           price: 180,
         ),
       }),
+      nasdaqRepository: _FakeNasdaqStockRepository({
+        'NVDA': stock(
+          ticker: 'NVDA',
+          name: 'NVIDIA Corp.',
+          price: 192.53,
+        ),
+      }),
+      mockRepository: _FakeMockStockRepository([
+        stock(
+          ticker: 'NVDA',
+          name: 'NVIDIA Corp.',
+          price: 875.4,
+          per: 30,
+          roe: 90,
+        ),
+      ]),
     );
 
     final stocks = await repository.getUsStocks();
 
     expect(stocks.map((stock) => stock.ticker).toList(),
-        ['AAPL', 'GOOGL', 'MSFT', 'AMZN']);
+        ['AAPL', 'GOOGL', 'MSFT', 'AMZN', 'NVDA']);
     expect(stocks.first.per, 20);
     expect(stocks.first.roe, 30);
+    final nvidia = stocks.firstWhere((stock) => stock.ticker == 'NVDA');
+    expect(nvidia.price, 192.53);
+    expect(nvidia.roe, 90);
   });
 
   test('getKoreanStocks merges KRX fundamentals with Kor fallback coverage',

@@ -2,6 +2,7 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hive/hive.dart';
+import 'package:intl/intl.dart';
 import 'package:strategy_workbench/core/network/hive_service.dart';
 import 'package:strategy_workbench/features/strategy/domain/entities/stock.dart';
 import 'package:strategy_workbench/features/strategy/domain/repositories/stock_repository.dart';
@@ -92,6 +93,8 @@ void main() {
 
   test('replaces cache and updates last_update_date when sync succeeds',
       () async {
+    final today = DateFormat('yyyy-MM-dd').format(DateTime.now());
+
     await stockCacheBox.put('OLD', stock('OLD'));
     await settingsBox.put('last_update_date', '2026-04-19');
 
@@ -111,6 +114,6 @@ void main() {
     expect(stockCacheBox.length, 2);
     expect(stockCacheBox.get('AAPL'), isA<Stock>());
     expect(stockCacheBox.get('OLD'), isNull);
-    expect(settingsBox.get('last_update_date'), '2026-04-20');
+    expect(settingsBox.get('last_update_date'), today);
   });
 }

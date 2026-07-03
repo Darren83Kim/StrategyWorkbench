@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import 'package:strategy_workbench/core/market/market_classification.dart';
 import 'package:strategy_workbench/core/providers/portfolio_providers.dart';
 import 'package:strategy_workbench/core/providers/rebalance_providers.dart';
 import 'package:strategy_workbench/core/providers/language_provider.dart';
@@ -20,8 +21,12 @@ class PortfolioScreen extends ConsumerStatefulWidget {
 class _PortfolioScreenState extends ConsumerState<PortfolioScreen> {
   @override
   Widget build(BuildContext context) {
-    final portfolio = ref.watch(portfolioProvider);
-    final summary = ref.watch(portfolioSummaryProvider);
+    final basePortfolio = ref.watch(portfolioProvider);
+    final portfolioAsync = ref.watch(portfolioWithLivePricesProvider);
+    final portfolio = portfolioAsync.value ?? basePortfolio;
+    final baseSummary = ref.watch(portfolioSummaryProvider);
+    final liveSummaryAsync = ref.watch(livePortfolioSummaryProvider);
+    final summary = liveSummaryAsync.value ?? baseSummary;
     final rebalanceCoachAsync = ref.watch(rebalanceCoachProvider);
     final transactionsAsync = ref.watch(transactionHistoryProvider);
     final s = ref.watch(stringsProvider);
@@ -441,6 +446,7 @@ class _PortfolioScreenState extends ConsumerState<PortfolioScreen> {
 
   Widget _buildPortfolioCard(PortfolioItem item, int index, dynamic s) {
     final isGain = item.gainLoss >= 0;
+    final displayName = resolveInstrumentName(item.ticker, item.name);
 
     return Padding(
       padding: const EdgeInsets.only(bottom: 8),
@@ -467,7 +473,7 @@ class _PortfolioScreenState extends ConsumerState<PortfolioScreen> {
                         ),
                         child: Center(
                           child: Text(
-                            item.ticker[0],
+                            displayName.characters.first,
                             style: const TextStyle(
                               color: Colors.white,
                               fontWeight: FontWeight.bold,
@@ -482,15 +488,15 @@ class _PortfolioScreenState extends ConsumerState<PortfolioScreen> {
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
                             Text(
-                              item.ticker,
+                              displayName,
                               style: const TextStyle(
                                 color: Colors.white,
                                 fontWeight: FontWeight.bold,
-                                fontSize: 12,
+                                fontSize: 13,
                               ),
                             ),
                             Text(
-                              item.name,
+                              item.ticker,
                               style: const TextStyle(
                                 color: Colors.white70,
                                 fontSize: 10,
@@ -505,7 +511,7 @@ class _PortfolioScreenState extends ConsumerState<PortfolioScreen> {
                         crossAxisAlignment: CrossAxisAlignment.end,
                         children: [
                           Text(
-                            '\$${item.currentPrice.toStringAsFixed(2)}',
+                            formatMarketPrice(item.ticker, item.currentPrice),
                             style: const TextStyle(
                               color: Colors.white,
                               fontWeight: FontWeight.bold,
@@ -546,12 +552,12 @@ class _PortfolioScreenState extends ConsumerState<PortfolioScreen> {
                       children: [
                         _buildInfoColumn(
                             s.quantity, item.quantity.toStringAsFixed(0)),
-                        _buildInfoColumn(
-                            s.price, '\$${item.avgPrice.toStringAsFixed(2)}'),
-                        _buildInfoColumn(
-                            'Total', '\$${item.totalCost.toStringAsFixed(2)}'),
+                        _buildInfoColumn(s.price,
+                            formatMarketPrice(item.ticker, item.avgPrice)),
+                        _buildInfoColumn('Total',
+                            formatMarketPrice(item.ticker, item.totalCost)),
                         _buildInfoColumn(s.currentValue,
-                            '\$${item.currentValue.toStringAsFixed(2)}'),
+                            formatMarketPrice(item.ticker, item.currentValue)),
                       ],
                     ),
                   ),
@@ -625,7 +631,7 @@ class _PortfolioScreenState extends ConsumerState<PortfolioScreen> {
             TextField(
               controller: tickerController,
               decoration: InputDecoration(
-                hintText: 'Ticker (e.g., AAPL)',
+                hintText: '티커/종목코드 (AAPL 또는 005930)',
                 hintStyle: const TextStyle(color: Colors.white30),
                 enabledBorder: UnderlineInputBorder(
                   borderSide: BorderSide(color: Colors.grey[700]!),
@@ -669,7 +675,7 @@ class _PortfolioScreenState extends ConsumerState<PortfolioScreen> {
           ),
           ElevatedButton(
             onPressed: () {
-              final ticker = tickerController.text.trim().toUpperCase();
+              final ticker = normalizeTickerInput(tickerController.text);
               final quantity =
                   int.tryParse(quantityController.text.trim()) ?? 0;
               final price = double.tryParse(priceController.text.trim()) ?? 0.0;
@@ -715,6 +721,7 @@ class _PortfolioScreenState extends ConsumerState<PortfolioScreen> {
 
   void _showHoldingActionsSheet(PortfolioItem item) {
     final s = ref.read(stringsProvider);
+    final displayName = resolveInstrumentName(item.ticker, item.name);
     developer.log('Opening holding actions: ${item.ticker}',
         name: 'PortfolioScreen');
 
@@ -735,7 +742,7 @@ class _PortfolioScreenState extends ConsumerState<PortfolioScreen> {
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
                     Text(
-                      '${item.ticker} - ${item.name}',
+                      '$displayName · ${item.ticker}',
                       style: const TextStyle(
                         color: Colors.white,
                         fontWeight: FontWeight.bold,
@@ -759,7 +766,7 @@ class _PortfolioScreenState extends ConsumerState<PortfolioScreen> {
                     children: [
                       _buildDetailRow(
                         'Current Price',
-                        '\$${item.currentPrice.toStringAsFixed(2)}',
+                        formatMarketPrice(item.ticker, item.currentPrice),
                       ),
                       _buildDetailRow(
                           'Quantity', item.quantity.toStringAsFixed(0)),

@@ -2,12 +2,55 @@ import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:flutter/foundation.dart';
 
 class ApiKeys {
+  static String _define(String key) {
+    switch (key) {
+      case 'FINNHUB_API_KEY':
+        return const String.fromEnvironment('FINNHUB_API_KEY');
+      case 'FMP_API_KEY':
+        return const String.fromEnvironment('FMP_API_KEY');
+      case 'KRX_API_KEY':
+        return const String.fromEnvironment('KRX_API_KEY');
+      case 'DART_API_KEY':
+        return const String.fromEnvironment('DART_API_KEY');
+      case 'KOR_INVESTMENT_APP_KEY':
+        return const String.fromEnvironment('KOR_INVESTMENT_APP_KEY');
+      case 'KOR_INVESTMENT_SECRET':
+        return const String.fromEnvironment('KOR_INVESTMENT_SECRET');
+      case 'KOR_INVESTMENT_ACCOUNT':
+        return const String.fromEnvironment('KOR_INVESTMENT_ACCOUNT');
+      case 'ADMOB_ANDROID_APP_ID':
+        return const String.fromEnvironment('ADMOB_ANDROID_APP_ID');
+      case 'ADMOB_IOS_APP_ID':
+        return const String.fromEnvironment('ADMOB_IOS_APP_ID');
+      case 'ADMOB_ANDROID_BANNER_ID':
+        return const String.fromEnvironment('ADMOB_ANDROID_BANNER_ID');
+      case 'ADMOB_IOS_BANNER_ID':
+        return const String.fromEnvironment('ADMOB_IOS_BANNER_ID');
+      case 'ADMOB_ANDROID_INTERSTITIAL_ID':
+        return const String.fromEnvironment('ADMOB_ANDROID_INTERSTITIAL_ID');
+      case 'ADMOB_IOS_INTERSTITIAL_ID':
+        return const String.fromEnvironment('ADMOB_IOS_INTERSTITIAL_ID');
+      default:
+        return '';
+    }
+  }
+
   static String _env(String key, {String fallback = ''}) {
+    final definedValue = _define(key);
+    if (definedValue.isNotEmpty) {
+      return definedValue;
+    }
+
     try {
       return dotenv.env[key] ?? fallback;
     } catch (_) {
       return fallback;
     }
+  }
+
+  static bool _envBool(String key) {
+    final value = _env(key).trim().toLowerCase();
+    return value == 'true' || value == '1' || value == 'yes';
   }
 
   // ── Finnhub API (US 1순위) ──
@@ -40,8 +83,27 @@ class ApiKeys {
   static bool get isFmpConfigured => fmpApiKey.isNotEmpty;
   static bool get isKrxConfigured => krxApiKey.isNotEmpty;
   static bool get isDartConfigured => dartApiKey.isNotEmpty;
+  static const bool _enableKorInvestmentDebug =
+      bool.fromEnvironment('ENABLE_KOR_INVESTMENT_DEBUG');
+  static bool get allowKorInvestmentInDebug =>
+      _enableKorInvestmentDebug || _envBool('ENABLE_KOR_INVESTMENT_DEBUG');
+
+  // KIS keys are personal account secrets. Keep direct KIS calls debug-only;
+  // release/profile builds must use public/commercial data sources or a server.
+  static bool shouldEnableKorInvestmentRuntime({
+    required bool isConfigured,
+    required bool isDebugBuild,
+    required bool debugOptIn,
+  }) {
+    return isConfigured && isDebugBuild && debugOptIn;
+  }
+
   static bool get isKorInvestmentRuntimeEnabled =>
-      isKorInvestmentConfigured && !kDebugMode;
+      shouldEnableKorInvestmentRuntime(
+        isConfigured: isKorInvestmentConfigured,
+        isDebugBuild: kDebugMode,
+        debugOptIn: allowKorInvestmentInDebug,
+      );
 
   /// 실제 API 키가 하나라도 설정되어 있으면 true → Mock 폴백 비활성화
   static bool get isAnyRealApiConfigured =>
@@ -76,24 +138,36 @@ class ApiKeys {
   static const String admobIosTestInterstitialId =
       'ca-app-pub-3940256099942544/4411468910';
 
-  static String get admobAndroidAppId =>
-      _env('ADMOB_ANDROID_APP_ID', fallback: admobAndroidTestAppId);
-  static String get admobIosAppId =>
-      _env('ADMOB_IOS_APP_ID', fallback: admobIosTestAppId);
+  static const bool _forceAdmobTestIds =
+      bool.fromEnvironment('FORCE_ADMOB_TEST_IDS');
+  static bool get usesAdmobTestIds => kDebugMode || _forceAdmobTestIds;
 
-  static String get admobAndroidBannerId =>
-      _env('ADMOB_ANDROID_BANNER_ID', fallback: admobAndroidTestBannerId);
-  static String get admobIosBannerId =>
-      _env('ADMOB_IOS_BANNER_ID', fallback: admobIosTestBannerId);
+  static String get admobAndroidAppId => usesAdmobTestIds
+      ? admobAndroidTestAppId
+      : _env('ADMOB_ANDROID_APP_ID', fallback: admobAndroidTestAppId);
+  static String get admobIosAppId => usesAdmobTestIds
+      ? admobIosTestAppId
+      : _env('ADMOB_IOS_APP_ID', fallback: admobIosTestAppId);
 
-  static String get admobAndroidInterstitialId => _env(
-        'ADMOB_ANDROID_INTERSTITIAL_ID',
-        fallback: admobAndroidTestInterstitialId,
-      );
-  static String get admobIosInterstitialId => _env(
-        'ADMOB_IOS_INTERSTITIAL_ID',
-        fallback: admobIosTestInterstitialId,
-      );
+  static String get admobAndroidBannerId => usesAdmobTestIds
+      ? admobAndroidTestBannerId
+      : _env('ADMOB_ANDROID_BANNER_ID', fallback: admobAndroidTestBannerId);
+  static String get admobIosBannerId => usesAdmobTestIds
+      ? admobIosTestBannerId
+      : _env('ADMOB_IOS_BANNER_ID', fallback: admobIosTestBannerId);
+
+  static String get admobAndroidInterstitialId => usesAdmobTestIds
+      ? admobAndroidTestInterstitialId
+      : _env(
+          'ADMOB_ANDROID_INTERSTITIAL_ID',
+          fallback: admobAndroidTestInterstitialId,
+        );
+  static String get admobIosInterstitialId => usesAdmobTestIds
+      ? admobIosTestInterstitialId
+      : _env(
+          'ADMOB_IOS_INTERSTITIAL_ID',
+          fallback: admobIosTestInterstitialId,
+        );
 
   static String get admobBannerId {
     switch (defaultTargetPlatform) {

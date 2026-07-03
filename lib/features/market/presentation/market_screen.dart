@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import 'package:strategy_workbench/core/market/market_classification.dart';
 import 'package:strategy_workbench/core/providers/stock_providers.dart';
 import 'package:strategy_workbench/core/providers/language_provider.dart';
 import 'package:strategy_workbench/shared/widgets/glass_container.dart';
@@ -22,7 +23,10 @@ class MarketScreen extends ConsumerWidget {
           IconButton(
             icon: const Icon(Icons.refresh),
             tooltip: s.refresh,
-            onPressed: () => ref.invalidate(stockListProvider),
+            onPressed: () async {
+              await resetStockCacheDate();
+              ref.invalidate(stockListProvider);
+            },
           ),
         ],
       ),
@@ -59,8 +63,13 @@ class MarketScreen extends ConsumerWidget {
             itemCount: stocks.length,
             itemBuilder: (context, index) {
               final stock = stocks[index];
+              final displayName = resolveInstrumentName(
+                stock.ticker,
+                stock.name,
+              );
               return Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
                 child: InkWell(
                   onTap: () => context.push('/market/${stock.ticker}'),
                   child: GlassContainer(
@@ -73,7 +82,7 @@ class MarketScreen extends ConsumerWidget {
                             child: Column(
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
-                                Text(stock.name,
+                                Text(displayName,
                                     style: const TextStyle(
                                         fontSize: 18,
                                         fontWeight: FontWeight.bold),
@@ -87,15 +96,18 @@ class MarketScreen extends ConsumerWidget {
                           Column(
                             crossAxisAlignment: CrossAxisAlignment.end,
                             children: [
-                              Text('\$${stock.price.toStringAsFixed(2)}',
+                              Text(formatMarketPrice(stock.ticker, stock.price),
                                   style: const TextStyle(
-                                      fontSize: 18, fontWeight: FontWeight.bold)),
+                                      fontSize: 18,
+                                      fontWeight: FontWeight.bold)),
                               Row(
                                 mainAxisSize: MainAxisSize.min,
                                 children: [
-                                  _buildTag('PER ${stock.per.toStringAsFixed(1)}'),
+                                  _buildTag(
+                                      'PER ${stock.per.toStringAsFixed(1)}'),
                                   const SizedBox(width: 4),
-                                  _buildTag('ROE ${stock.roe.toStringAsFixed(1)}%'),
+                                  _buildTag(
+                                      'ROE ${stock.roe.toStringAsFixed(1)}%'),
                                 ],
                               ),
                             ],

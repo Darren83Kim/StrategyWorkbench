@@ -3,7 +3,9 @@ import 'dart:convert';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:hive_flutter/hive_flutter.dart';
+import 'package:strategy_workbench/core/market/market_classification.dart';
 import 'package:strategy_workbench/core/network/database_helper.dart';
+import 'package:strategy_workbench/core/providers/stock_providers.dart';
 import 'package:strategy_workbench/features/portfolio/domain/entities/transaction.dart'
     as model;
 import 'package:strategy_workbench/features/portfolio/domain/services/portfolio_service.dart';
@@ -60,9 +62,10 @@ class PortfolioItem {
       };
 
   factory PortfolioItem.fromJson(Map<String, dynamic> json) {
+    final ticker = normalizeTickerInput(json['ticker'] as String);
     return PortfolioItem(
-      ticker: json['ticker'] as String,
-      name: json['name'] as String? ?? json['ticker'] as String,
+      ticker: ticker,
+      name: resolveInstrumentName(ticker, json['name'] as String?),
       quantity: (json['quantity'] as num).toDouble(),
       avgPrice: (json['avgPrice'] as num).toDouble(),
       currentPrice: (json['currentPrice'] as num).toDouble(),
@@ -148,8 +151,8 @@ class PortfolioNotifier extends Notifier<List<PortfolioItem>> {
 
   /// 매수 (추가 매수 시 평단가 자동 계산)
   void buy(String ticker, String name, int quantity, double price) {
-    final normalizedTicker = ticker.trim().toUpperCase();
-    final normalizedName = name.trim().isEmpty ? normalizedTicker : name.trim();
+    final normalizedTicker = normalizeTickerInput(ticker);
+    final normalizedName = resolveInstrumentName(normalizedTicker, name);
     final existing = state
         .indexWhere((item) => item.ticker.toUpperCase() == normalizedTicker);
 
@@ -196,7 +199,7 @@ class PortfolioNotifier extends Notifier<List<PortfolioItem>> {
 
   /// 매도
   void sell(String ticker, int quantity) {
-    final normalizedTicker = ticker.trim().toUpperCase();
+    final normalizedTicker = normalizeTickerInput(ticker);
     final existing = state.indexWhere(
       (item) => item.ticker.toUpperCase() == normalizedTicker,
     );
@@ -258,7 +261,7 @@ class PortfolioNotifier extends Notifier<List<PortfolioItem>> {
 
   /// 현재가 업데이트
   void updatePrice(String ticker, double newPrice) {
-    final normalizedTicker = ticker.trim().toUpperCase();
+    final normalizedTicker = normalizeTickerInput(ticker);
     state = state.map((item) {
       if (item.ticker.toUpperCase() == normalizedTicker) {
         return PortfolioItem(
@@ -317,9 +320,7 @@ final transactionHistoryProvider =
 );
 
 // ── 포트폴리오 요약 (계산된 값) ──
-final portfolioSummaryProvider = Provider<Map<String, double>>((ref) {
-  final portfolio = ref.watch(portfolioProvider);
-
+Map<String, double> calculatePortfolioSummary(List<PortfolioItem> portfolio) {
   final totalCost =
       portfolio.fold<double>(0, (sum, item) => sum + item.totalCost);
   final totalValue =
@@ -334,6 +335,55 @@ final portfolioSummaryProvider = Provider<Map<String, double>>((ref) {
     'gainLossPercent': gainLossPercent,
     'stockCount': portfolio.length.toDouble(),
   };
+}
+
+final portfolioSummaryProvider = Provider<Map<String, double>>((ref) {
+  final portfolio = ref.watch(portfolioProvider);
+  return calculatePortfolioSummary(portfolio);
+});
+
+final portfolioWithLivePricesProvider =
+    FutureProvider<List<PortfolioItem>>((ref) async {
+  final portfolio = ref.watch(portfolioProvider);
+  if (portfolio.isEmpty) {
+    return const [];
+  }
+
+  final repository = ref.read(hybridRepositoryProvider);
+  final enriched = await Future.wait(
+    portfolio.map((item) async {
+      try {
+        final stock = await repository.getStock(item.ticker);
+        if (stock == null) {
+          return item.copyWith(
+            name: resolveInstrumentName(item.ticker, item.name),
+          );
+        }
+
+        return item.copyWith(
+          name: resolveInstrumentName(stock.ticker, stock.name),
+          currentPrice: stock.price > 0 ? stock.price : item.currentPrice,
+        );
+      } catch (error) {
+        developer.log(
+          'Failed to enrich portfolio holding ${item.ticker}: $error',
+          name: 'portfolioWithLivePricesProvider',
+          error: error,
+        );
+        return item.copyWith(
+          name: resolveInstrumentName(item.ticker, item.name),
+        );
+      }
+    }),
+  );
+
+  return enriched;
+});
+
+final livePortfolioSummaryProvider =
+    FutureProvider<Map<String, double>>((ref) async {
+  final portfolio = await ref.watch(portfolioWithLivePricesProvider.future);
+  return calculatePortfolioSummary(portfolio);
 });
 
 List<PortfolioItem> buildPortfolioFromTransactions(
@@ -344,29 +394,32 @@ List<PortfolioItem> buildPortfolioFromTransactions(
   final portfolioService = PortfolioService();
   final holdings = <String, PortfolioItem>{};
   final knownNames = <String, String>{
-    for (final item in existingItems) item.ticker.toUpperCase(): item.name,
+    for (final item in existingItems)
+      normalizeTickerInput(item.ticker):
+          resolveInstrumentName(item.ticker, item.name),
   };
   final knownPrices = <String, double>{
     for (final item in existingItems)
-      item.ticker.toUpperCase(): item.currentPrice,
+      normalizeTickerInput(item.ticker): item.currentPrice,
   };
 
   for (final entry in cachedStocks.entries) {
-    knownNames.putIfAbsent(entry.key, () => entry.value.name);
-    knownPrices[entry.key] = entry.value.price;
+    final ticker = normalizeTickerInput(entry.key);
+    knownNames[ticker] = resolveInstrumentName(ticker, entry.value.name);
+    knownPrices[ticker] = entry.value.price;
   }
 
   final ordered = [...transactions]
     ..sort((a, b) => a.dateTime.compareTo(b.dateTime));
 
   for (final tx in ordered) {
-    final ticker = tx.ticker.trim().toUpperCase();
+    final ticker = normalizeTickerInput(tx.ticker);
     if (ticker.isEmpty) {
       continue;
     }
 
     final currentPrice = knownPrices[ticker] ?? tx.price;
-    final name = knownNames[ticker] ?? ticker;
+    final name = resolveInstrumentName(ticker, knownNames[ticker]);
     final existing = holdings[ticker];
 
     if (tx.type == model.TransactionType.BUY) {
@@ -414,9 +467,12 @@ List<PortfolioItem> buildPortfolioFromTransactions(
 
   return holdings.values
       .map((item) => item.copyWith(
-            name: knownNames[item.ticker.toUpperCase()] ?? item.name,
-            currentPrice:
-                knownPrices[item.ticker.toUpperCase()] ?? item.currentPrice,
+            name: resolveInstrumentName(
+              item.ticker,
+              knownNames[normalizeTickerInput(item.ticker)] ?? item.name,
+            ),
+            currentPrice: knownPrices[normalizeTickerInput(item.ticker)] ??
+                item.currentPrice,
           ))
       .toList()
     ..sort((a, b) => a.ticker.compareTo(b.ticker));

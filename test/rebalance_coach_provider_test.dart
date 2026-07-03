@@ -74,6 +74,6 @@ void main() {
     );
     expect(coach.suggestions.first.headline, 'IBM 점검');
     expect(coach.suggestions[1].reason, contains('비중'));
-    expect(coach.suggestions[2].headline, 'MSFT 편입 후보');
+    expect(coach.suggestions[2].headline, 'Microsoft 편입 후보');
   });
 }

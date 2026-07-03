@@ -4,6 +4,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:hive_flutter/hive_flutter.dart';
 import 'package:intl/intl.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:strategy_workbench/core/cache/stock_cache_keys.dart';
+import 'package:strategy_workbench/core/market/market_classification.dart';
 import 'package:strategy_workbench/core/providers/filter_providers.dart';
 import 'package:strategy_workbench/core/providers/stock_providers.dart';
 import 'package:strategy_workbench/core/scoring/scoring_engine.dart';
@@ -77,9 +79,44 @@ class StrategySnapshot {
   }
 }
 
+class StrategySnapshotMarketRequest {
+  final String strategyName;
+  final MarketFilter marketFilter;
+
+  const StrategySnapshotMarketRequest({
+    required this.strategyName,
+    required this.marketFilter,
+  });
+
+  @override
+  bool operator ==(Object other) {
+    return identical(this, other) ||
+        other is StrategySnapshotMarketRequest &&
+            other.strategyName == strategyName &&
+            other.marketFilter == marketFilter;
+  }
+
+  @override
+  int get hashCode => Object.hash(strategyName, marketFilter);
+}
+
 // ── 스냅샷 캐시 키 ──
-String _snapKey(String strategyName) =>
-    'snap_v1_${strategyName.replaceAll(' ', '_')}';
+String _snapKey(
+  String strategyName, [
+  MarketFilter marketFilter = MarketFilter.hybrid,
+]) {
+  final base = 'snap_v2_${strategyName.replaceAll(' ', '_')}';
+  if (marketFilter == MarketFilter.hybrid) {
+    return base;
+  }
+  return '${base}_${marketFilter.name}';
+}
+
+List<String> strategySnapshotCacheKeys(String strategyName) {
+  return MarketFilter.values
+      .map((marketFilter) => _snapKey(strategyName, marketFilter))
+      .toList();
+}
 
 Map<String, dynamic> _serializeStrategyStock(Stock stock) => {
       'ticker': stock.ticker,
@@ -166,7 +203,8 @@ final allStocksForSnapshotProvider = FutureProvider<List<Stock>>((ref) async {
   try {
     final settings = Hive.box('settings');
     final lastUpdate = settings.get('last_update_date') as String?;
-    if (lastUpdate == today) {
+    final cachedVersion = settings.get(stockCacheVersionKey);
+    if (lastUpdate == today && cachedVersion == stockCacheVersion) {
       final stockCache = Hive.box('stock_cache');
       if (stockCache.isNotEmpty) {
         final cached = <Stock>[];
@@ -221,9 +259,30 @@ final allStocksForSnapshotProvider = FutureProvider<List<Stock>>((ref) async {
 // ── 전략별 스냅샷 Provider (family, non-autoDispose) ──
 final strategySnapshotProvider =
     FutureProvider.family<StrategySnapshot, String>((ref, strategyName) async {
+  return _loadStrategySnapshot(ref, strategyName, MarketFilter.hybrid);
+});
+
+final strategySnapshotByMarketProvider =
+    FutureProvider.family<StrategySnapshot, StrategySnapshotMarketRequest>(
+        (ref, request) async {
+  if (request.marketFilter == MarketFilter.hybrid) {
+    return ref.watch(strategySnapshotProvider(request.strategyName).future);
+  }
+  return _loadStrategySnapshot(
+    ref,
+    request.strategyName,
+    request.marketFilter,
+  );
+});
+
+Future<StrategySnapshot> _loadStrategySnapshot(
+  Ref ref,
+  String strategyName,
+  MarketFilter marketFilter,
+) async {
   final today = DateFormat('yyyy-MM-dd').format(DateTime.now());
   final prefs = await SharedPreferences.getInstance();
-  final cacheKey = _snapKey(strategyName);
+  final cacheKey = _snapKey(strategyName, marketFilter);
 
   // 캐시 확인
   final cached = prefs.getString(cacheKey);
@@ -246,6 +305,7 @@ final strategySnapshotProvider =
           return await _compute(
             ref,
             strategyName,
+            marketFilter,
             today,
             previous,
             prefs,
@@ -263,19 +323,35 @@ final strategySnapshotProvider =
           .map((e) => SnapshotStock.fromJson(e as Map<String, dynamic>))
           .toList();
       return await _compute(
-          ref, strategyName, today, prevStocks, prefs, cacheKey);
+        ref,
+        strategyName,
+        marketFilter,
+        today,
+        prevStocks,
+        prefs,
+        cacheKey,
+      );
     } catch (e) {
       developer.log('Cache parse error for $strategyName: $e',
           name: 'strategySnapshot');
     }
   }
 
-  return await _compute(ref, strategyName, today, [], prefs, cacheKey);
-});
+  return await _compute(
+    ref,
+    strategyName,
+    marketFilter,
+    today,
+    [],
+    prefs,
+    cacheKey,
+  );
+}
 
 Future<StrategySnapshot> _compute(
   Ref ref,
   String strategyName,
+  MarketFilter marketFilter,
   String date,
   List<SnapshotStock> previous,
   SharedPreferences prefs,
@@ -290,8 +366,9 @@ Future<StrategySnapshot> _compute(
 
   try {
     final stocks = await ref.read(allStocksForSnapshotProvider.future);
+    final filteredStocks = filterStocksByMarket(stocks, marketFilter);
     final current = await _buildSnapshotStocksInBackground(
-      stocks: stocks,
+      stocks: filteredStocks,
       weights: strategy.weights,
       topN: strategy.topN,
     );
@@ -307,8 +384,10 @@ Future<StrategySnapshot> _compute(
           'previous': previous.map((s) => s.toJson()).toList(),
         }));
 
-    developer.log('Computed $strategyName: ${current.length} stocks',
-        name: 'strategySnapshot');
+    developer.log(
+      'Computed $strategyName/${marketFilter.name}: ${current.length} stocks',
+      name: 'strategySnapshot',
+    );
     return snapshot;
   } catch (e) {
     developer.log('Compute error for $strategyName: $e',
@@ -318,8 +397,29 @@ Future<StrategySnapshot> _compute(
 }
 
 /// 스냅샷 강제 새로고침 (캐시 삭제 후 재계산)
-Future<void> refreshStrategySnapshot(WidgetRef ref, String strategyName) async {
+Future<void> refreshStrategySnapshot(
+  WidgetRef ref,
+  String strategyName, {
+  MarketFilter marketFilter = MarketFilter.hybrid,
+  bool refreshStocks = false,
+}) async {
   final prefs = await SharedPreferences.getInstance();
-  await prefs.remove(_snapKey(strategyName));
-  ref.invalidate(strategySnapshotProvider(strategyName));
+  if (refreshStocks) {
+    await resetStockCacheDate();
+    ref.invalidate(allStocksForSnapshotProvider);
+    ref.invalidate(stockListProvider);
+  }
+  await prefs.remove(_snapKey(strategyName, marketFilter));
+  if (marketFilter == MarketFilter.hybrid) {
+    ref.invalidate(strategySnapshotProvider(strategyName));
+  } else {
+    ref.invalidate(
+      strategySnapshotByMarketProvider(
+        StrategySnapshotMarketRequest(
+          strategyName: strategyName,
+          marketFilter: marketFilter,
+        ),
+      ),
+    );
+  }
 }

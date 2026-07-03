@@ -16,6 +16,7 @@ class KorInvestmentRepository {
   String? _accessToken;
   DateTime? _tokenExpiry;
   bool _persistedTokenLoaded = false;
+  Future<void>? _authInFlight;
 
   KorInvestmentRepository({DioClient? dioClient})
       : _dioClient = dioClient ?? DioClient();
@@ -36,10 +37,7 @@ class KorInvestmentRepository {
       }
 
       // 토큰 확인 및 갱신
-      await _restorePersistedTokenIfNeeded();
-      if (_accessToken == null || _isTokenExpired()) {
-        await _authenticate();
-      }
+      await _ensureAuthenticated();
 
       final stocks = <Stock>[];
 
@@ -78,15 +76,35 @@ class KorInvestmentRepository {
         return null;
       }
 
-      await _restorePersistedTokenIfNeeded();
-      if (_accessToken == null || _isTokenExpired()) {
-        await _authenticate();
-      }
+      await _ensureAuthenticated();
       return await _fetchStock(code);
     } catch (e) {
       developer.log('Error fetching stock $code: $e',
           name: 'KorInvestmentRepository', error: e);
       return null;
+    }
+  }
+
+  Future<void> _ensureAuthenticated() async {
+    await _restorePersistedTokenIfNeeded();
+    if (_accessToken != null && !_isTokenExpired()) {
+      return;
+    }
+
+    final existingAuth = _authInFlight;
+    if (existingAuth != null) {
+      await existingAuth;
+      return;
+    }
+
+    final authFuture = _authenticate();
+    _authInFlight = authFuture;
+    try {
+      await authFuture;
+    } finally {
+      if (identical(_authInFlight, authFuture)) {
+        _authInFlight = null;
+      }
     }
   }
 

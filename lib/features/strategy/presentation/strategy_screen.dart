@@ -4,10 +4,13 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:strategy_workbench/core/market/market_classification.dart';
 import 'package:strategy_workbench/core/providers/filter_providers.dart';
 import 'package:strategy_workbench/core/providers/language_provider.dart';
 import 'package:strategy_workbench/core/providers/snapshot_providers.dart';
 import 'package:strategy_workbench/core/providers/stock_detail_providers.dart';
+import 'package:strategy_workbench/core/providers/stock_providers.dart'
+    show MarketFilter;
 import 'package:strategy_workbench/core/providers/strategy_comparison_providers.dart';
 import 'package:strategy_workbench/core/services/alert_runtime_service.dart';
 import 'package:strategy_workbench/shared/widgets/glass_container.dart';
@@ -21,11 +24,27 @@ class StrategyScreen extends ConsumerStatefulWidget {
 
 class _StrategyScreenState extends ConsumerState<StrategyScreen> {
   final Set<String> _expanded = {};
+  MarketFilter _marketFilter = MarketFilter.hybrid;
 
   Future<void> _clearStrategySnapshot(String strategyName) async {
     final prefs = await SharedPreferences.getInstance();
-    await prefs.remove('snap_v1_${strategyName.replaceAll(' ', '_')}');
+    for (final cacheKey in strategySnapshotCacheKeys(strategyName)) {
+      await prefs.remove(cacheKey);
+    }
     ref.invalidate(strategySnapshotProvider(strategyName));
+    for (final marketFilter in MarketFilter.values) {
+      if (marketFilter == MarketFilter.hybrid) {
+        continue;
+      }
+      ref.invalidate(
+        strategySnapshotByMarketProvider(
+          StrategySnapshotMarketRequest(
+            strategyName: strategyName,
+            marketFilter: marketFilter,
+          ),
+        ),
+      );
+    }
   }
 
   Future<void> _showComparisonSheet(
@@ -185,6 +204,17 @@ class _StrategyScreenState extends ConsumerState<StrategyScreen> {
               ),
             ),
           ),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+            child: _MarketFilterBar(
+              value: _marketFilter,
+              onChanged: (value) {
+                setState(() {
+                  _marketFilter = value;
+                });
+              },
+            ),
+          ),
           Expanded(
             child: ListView.builder(
               padding: const EdgeInsets.all(16),
@@ -199,6 +229,7 @@ class _StrategyScreenState extends ConsumerState<StrategyScreen> {
                     strategy: strategy,
                     isExpanded: isExpanded,
                     isActive: activeStrategyName == strategy.name,
+                    marketFilter: _marketFilter,
                     watchedTickers: watched,
                     onToggleExpand: () => setState(() {
                       if (isExpanded) {
@@ -211,7 +242,12 @@ class _StrategyScreenState extends ConsumerState<StrategyScreen> {
                         .read(watchlistProvider.notifier)
                         .toggle(strategy.name, ticker),
                     onRefresh: () async {
-                      await refreshStrategySnapshot(ref, strategy.name);
+                      await refreshStrategySnapshot(
+                        ref,
+                        strategy.name,
+                        marketFilter: _marketFilter,
+                        refreshStocks: true,
+                      );
                     },
                     onUpdateTopN: (topN) async {
                       await ref
@@ -233,6 +269,49 @@ class _StrategyScreenState extends ConsumerState<StrategyScreen> {
           ),
         ],
       ),
+    );
+  }
+}
+
+class _MarketFilterBar extends StatelessWidget {
+  final MarketFilter value;
+  final ValueChanged<MarketFilter> onChanged;
+
+  const _MarketFilterBar({
+    required this.value,
+    required this.onChanged,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      children: MarketFilter.values
+          .map(
+            (filter) => Padding(
+              padding: const EdgeInsets.only(right: 8),
+              child: ChoiceChip(
+                label: Text(marketFilterLabel(filter)),
+                selected: value == filter,
+                onSelected: (_) => onChanged(filter),
+                selectedColor: const Color(0xFF10B981),
+                backgroundColor: const Color(0xFF1E293B),
+                side: BorderSide(
+                  color: value == filter
+                      ? const Color(0xFF10B981)
+                      : const Color(0xFF334155),
+                ),
+                labelStyle: TextStyle(
+                  color: value == filter ? Colors.white : Colors.white70,
+                  fontSize: 12,
+                  fontWeight:
+                      value == filter ? FontWeight.w700 : FontWeight.w500,
+                ),
+                materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                visualDensity: VisualDensity.compact,
+              ),
+            ),
+          )
+          .toList(),
     );
   }
 }
@@ -395,7 +474,7 @@ class _StrategySelector extends StatelessWidget {
         ),
         const SizedBox(height: 6),
         DropdownButtonFormField<String>(
-          value: value,
+          initialValue: value,
           dropdownColor: const Color(0xFF1E293B),
           decoration: InputDecoration(
             filled: true,
@@ -703,6 +782,7 @@ class _StrategyCard extends ConsumerWidget {
   final SavedFilter strategy;
   final bool isExpanded;
   final bool isActive;
+  final MarketFilter marketFilter;
   final Set<String> watchedTickers;
   final VoidCallback onToggleExpand;
   final void Function(String) onToggleWatch;
@@ -716,6 +796,7 @@ class _StrategyCard extends ConsumerWidget {
     required this.strategy,
     required this.isExpanded,
     required this.isActive,
+    required this.marketFilter,
     required this.watchedTickers,
     required this.onToggleExpand,
     required this.onToggleWatch,
@@ -728,10 +809,19 @@ class _StrategyCard extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final snapshotAsync =
-        isExpanded ? ref.watch(strategySnapshotProvider(strategy.name)) : null;
+    final marketRequest = StrategySnapshotMarketRequest(
+      strategyName: strategy.name,
+      marketFilter: marketFilter,
+    );
+    final snapshotAsync = isExpanded
+        ? marketFilter == MarketFilter.hybrid
+            ? ref.watch(strategySnapshotProvider(strategy.name))
+            : ref.watch(strategySnapshotByMarketProvider(marketRequest))
+        : null;
     final insightsAsync = isExpanded
-        ? ref.watch(strategyStockInsightsProvider(strategy.name))
+        ? marketFilter == MarketFilter.hybrid
+            ? ref.watch(strategyStockInsightsProvider(strategy.name))
+            : ref.watch(strategyStockInsightsByMarketProvider(marketRequest))
         : null;
 
     return GlassContainer(
@@ -955,7 +1045,7 @@ class _StrategyCard extends ConsumerWidget {
                       padding: EdgeInsets.all(24),
                       child: Center(
                         child: Text(
-                          '종목 데이터 없음',
+                          '선택한 시장의 종목 데이터 없음',
                           style: TextStyle(color: Colors.white54),
                         ),
                       ),
@@ -1020,6 +1110,8 @@ class _StockRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final displayName = resolveInstrumentName(stock.ticker, stock.name);
+
     return InkWell(
       onTap: onToggle,
       child: Padding(
@@ -1046,7 +1138,7 @@ class _StockRow extends StatelessWidget {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
-                    stock.ticker,
+                    displayName,
                     style: const TextStyle(
                       color: Colors.white,
                       fontWeight: FontWeight.bold,
@@ -1054,7 +1146,7 @@ class _StockRow extends StatelessWidget {
                     ),
                   ),
                   Text(
-                    stock.name,
+                    stock.ticker,
                     style: const TextStyle(color: Colors.white54, fontSize: 10),
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
@@ -1073,7 +1165,7 @@ class _StockRow extends StatelessWidget {
               ),
             ),
             Text(
-              '\$${stock.price.toStringAsFixed(2)}',
+              formatMarketPrice(stock.ticker, stock.price),
               style: const TextStyle(color: Colors.white70, fontSize: 12),
             ),
             const SizedBox(width: 8),

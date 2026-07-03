@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:strategy_workbench/core/market/market_classification.dart';
 import 'package:strategy_workbench/features/portfolio/domain/entities/transaction.dart'
     as model;
 
@@ -87,7 +88,7 @@ class TransactionTimelineList extends StatelessWidget {
                           ),
                         ),
                         Text(
-                          '${tx.quantity} @ \$${tx.price.toStringAsFixed(2)}',
+                          '${tx.quantity} @ ${formatMarketPrice(tx.ticker, tx.price)}',
                           style: const TextStyle(
                             color: Colors.white70,
                             fontSize: 9,
@@ -117,7 +118,8 @@ class TransactionTimelineList extends StatelessWidget {
     required bool isBuy,
   }) {
     final action = isBuy ? buyLabel : sellLabel;
-    return showTicker ? '$action $ticker' : action;
+    final name = resolveInstrumentName(ticker, ticker);
+    return showTicker ? '$action $name' : action;
   }
 
   String _formatDate(DateTime dateTime) {

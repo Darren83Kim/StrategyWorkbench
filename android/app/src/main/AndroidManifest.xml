@@ -10,7 +10,7 @@
     <uses-permission android:name="android.permission.SCHEDULE_EXACT_ALARM"/>
 
     <application
-        android:label="strategy_workbench"
+        android:label="Strategy Workbench"
         android:name="${applicationName}"
         android:icon="@mipmap/ic_launcher">
         <activity
@@ -37,10 +37,10 @@
             android:name="flutterEmbedding"
             android:value="2" />
 
-        <!-- Google Mobile Ads test App ID. Replace with real AdMob App ID for release. -->
+        <!-- Google Mobile Ads App ID. Debug builds use Google's test App ID. -->
         <meta-data
             android:name="com.google.android.gms.ads.APPLICATION_ID"
-            android:value="ca-app-pub-3940256099942544~3347511713" />
+            android:value="${admobApplicationId}" />
 
         <!-- Impeller 비활성화: 에뮬레이터 OpenGLES mipmap 크래시 방지 -->
         <!-- BackdropFilter(blur)가 Impeller+OpenGLES에서 SIGABRT 유발 -->

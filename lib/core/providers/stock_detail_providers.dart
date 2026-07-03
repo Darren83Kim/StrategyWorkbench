@@ -1,5 +1,6 @@
 import 'dart:developer' as developer;
 
+import 'package:strategy_workbench/core/market/market_classification.dart';
 import 'package:strategy_workbench/core/providers/filter_providers.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:strategy_workbench/core/providers/portfolio_providers.dart';
@@ -105,9 +106,9 @@ class StockInsightRequest {
 }
 
 Stock? findStockBySymbol(List<Stock> stocks, String symbol) {
-  final normalized = symbol.toUpperCase();
+  final normalized = normalizeTickerInput(symbol);
   for (final stock in stocks) {
-    if (stock.ticker.toUpperCase() == normalized) {
+    if (normalizeTickerInput(stock.ticker) == normalized) {
       return stock;
     }
   }
@@ -118,19 +119,45 @@ List<model.Transaction> filterTransactionsByTicker(
   List<model.Transaction> transactions,
   String ticker,
 ) {
-  final normalized = ticker.toUpperCase();
+  final normalized = normalizeTickerInput(ticker);
   final filtered = transactions
-      .where((tx) => tx.ticker.toUpperCase() == normalized)
+      .where((tx) => normalizeTickerInput(tx.ticker) == normalized)
       .toList()
     ..sort((a, b) => b.dateTime.compareTo(a.dateTime));
   return filtered;
 }
 
+Stock? _stockFromPortfolioHolding(
+  List<PortfolioItem> portfolio,
+  String symbol,
+) {
+  final normalized = normalizeTickerInput(symbol);
+  final item = portfolio
+      .where((holding) => normalizeTickerInput(holding.ticker) == normalized)
+      .firstOrNull;
+  if (item == null) {
+    return null;
+  }
+
+  return Stock(
+    ticker: item.ticker,
+    name: resolveInstrumentName(item.ticker, item.name),
+    price: item.currentPrice > 0 ? item.currentPrice : item.avgPrice,
+    per: 0,
+    roe: 0,
+    dividendYield: 0,
+    lastUpdated: DateTime.now(),
+  );
+}
+
 final stockDetailProvider =
     FutureProvider.autoDispose.family<StockDetailViewModel?, String>(
   (ref, symbol) async {
+    final normalizedSymbol = normalizeTickerInput(symbol);
     const metrics = ['per', 'roe', 'dividendYield'];
     final repository = ref.read(hybridRepositoryProvider);
+    final portfolioFallback = _stockFromPortfolioHolding(
+        ref.watch(portfolioProvider), normalizedSymbol);
 
     List<Stock> allStocks = const [];
     try {
@@ -144,12 +171,13 @@ final stockDetailProvider =
       );
     }
 
-    Stock? stock = findStockBySymbol(allStocks, symbol);
-    stock ??= await repository.getStock(symbol);
+    Stock? stock = await repository.getStock(normalizedSymbol);
+    stock ??= findStockBySymbol(allStocks, normalizedSymbol);
+    stock ??= portfolioFallback;
 
     if (stock == null) {
       developer.log(
-        'Stock not found: $symbol',
+        'Stock not found: $normalizedSymbol',
         name: 'stockDetailProvider',
       );
       return null;
@@ -293,6 +321,76 @@ final strategyStockInsightsProvider = FutureProvider.autoDispose
   },
 );
 
+final strategyStockInsightsByMarketProvider = FutureProvider.autoDispose
+    .family<Map<String, StockInsightViewModel>, StrategySnapshotMarketRequest>(
+  (ref, request) async {
+    final strategy = ref
+        .watch(allStrategiesProvider)
+        .where((item) => item.name == request.strategyName)
+        .firstOrNull;
+    if (strategy == null) {
+      return const {};
+    }
+
+    final snapshot =
+        await ref.watch(strategySnapshotByMarketProvider(request).future);
+    if (snapshot.current.isEmpty) {
+      return const {};
+    }
+
+    List<Stock> allStocks;
+    try {
+      allStocks = await ref.watch(allStocksForSnapshotProvider.future);
+    } catch (error, stackTrace) {
+      developer.log(
+        'Failed to load stock universe for market strategy insights: $error',
+        name: 'strategyStockInsightsByMarketProvider',
+        error: error,
+        stackTrace: stackTrace,
+      );
+      return const {};
+    }
+
+    final marketStocks = filterStocksByMarket(allStocks, request.marketFilter);
+    if (marketStocks.isEmpty) {
+      return const {};
+    }
+
+    const metrics = ['per', 'roe', 'dividendYield'];
+    final normalized = Normalizer().normalize(marketStocks, metrics);
+    final stocksByTicker = {
+      for (final stock in marketStocks)
+        normalizeTickerInput(stock.ticker): stock,
+    };
+    final tagger = SmartTagger();
+    final fallbackMetrics = {for (final metric in metrics) metric: 0.5};
+    final insights = <String, StockInsightViewModel>{};
+
+    for (final snapshotStock in snapshot.current) {
+      final stock = stocksByTicker[normalizeTickerInput(snapshotStock.ticker)];
+      if (stock == null) {
+        continue;
+      }
+
+      final detail = StockDetailViewModel(
+        stock: stock,
+        normalizedMetrics: normalized[stock.ticker] ?? fallbackMetrics,
+        metrics: metrics,
+        tags: tagger.generateTags(stock),
+        peerCount: marketStocks.length > 1 ? marketStocks.length - 1 : 0,
+      );
+
+      insights[normalizeTickerInput(stock.ticker)] = buildStockInsight(
+        strategy: strategy,
+        detail: detail,
+        snapshot: snapshot,
+      );
+    }
+
+    return insights;
+  },
+);
+
 StockInsightViewModel buildStockInsight({
   required SavedFilter strategy,
   required StockDetailViewModel detail,
@@ -300,7 +398,7 @@ StockInsightViewModel buildStockInsight({
 }) {
   final stock = detail.stock;
   final drivers = <StockInsightDriver>[
-    if ((strategy.weights['per'] ?? 0) > 0)
+    if ((strategy.weights['per'] ?? 0) > 0 && stock.per > 0)
       StockInsightDriver(
         metricKey: 'per',
         label: 'PER',
@@ -313,7 +411,7 @@ StockInsightViewModel buildStockInsight({
           normalizedValue: detail.normalizedMetrics['per'] ?? 0.0,
         ),
       ),
-    if ((strategy.weights['roe'] ?? 0) > 0)
+    if ((strategy.weights['roe'] ?? 0) > 0 && stock.roe > 0)
       StockInsightDriver(
         metricKey: 'roe',
         label: 'ROE',
@@ -326,7 +424,7 @@ StockInsightViewModel buildStockInsight({
           normalizedValue: detail.normalizedMetrics['roe'] ?? 0.0,
         ),
       ),
-    if ((strategy.weights['dividend'] ?? 0) > 0)
+    if ((strategy.weights['dividend'] ?? 0) > 0 && stock.dividendYield > 0)
       StockInsightDriver(
         metricKey: 'dividend',
         label: '배당',
