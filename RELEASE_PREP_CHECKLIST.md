@@ -7,6 +7,7 @@
 
 - 테스트 광고 기준 AdMob 배너/전면 광고 흐름은 구현되어 있다.
 - 2026-07-06 기준 내부 테스트 확인용 빌드는 `1.0.0+3`이며, 포트폴리오 금액 가독성 개선과 테스트 광고 강제 설정(`FORCE_ADMOB_TEST_IDS=true`)을 포함한다.
+- 2026-07-06 기준 정식 광고 확인용 출시 후보 빌드는 `1.0.0+4`이며, `FORCE_ADMOB_TEST_IDS=true`를 제거하고 실제 Android AdMob App ID / banner ID / interstitial ID를 `--dart-define`으로 주입해 AAB를 생성했다.
 - 개발 빌드에서 AdMob 테스트 ID가 기본 사용된다.
 - 실제 운영용 AdMob App ID / ad unit ID는 아직 `.env`에 넣어야 한다.
 - Android AdMob App ID / banner ID / interstitial ID는 2026-06-25 기준 로컬 `.env`에 반영했다. 실제 값은 Git에 커밋하지 않는다.
@@ -108,6 +109,7 @@
 - 2026-06-29 기준 `mipmap-mdpi`부터 `mipmap-xxxhdpi`까지 Android launcher icon을 교체했고, Play 등록용 512px 아이콘 `assets/store/icon_512.png`를 생성했다.
 - 2026-06-29 기준 아이콘 반영을 위해 `pubspec.yaml` 버전을 `1.0.0+2`로 올렸고, 내부 테스트용 AAB를 다시 빌드했다. 산출물은 동일 경로 `build/app/outputs/bundle/release/app-release.aab`이며, packaged manifest 기준 `versionCode=2`, `versionName=1.0.0`을 확인했다.
 - 2026-07-06 기준 포트폴리오 금액 가독성 개선 후 `pubspec.yaml` 버전을 `1.0.0+3`으로 올렸고, 내부 테스트용 AAB/APK를 다시 빌드했다. 산출물은 `build/app/outputs/bundle/release/app-release.aab`와 `build/app/outputs/flutter-apk/app-release.apk`이며, 테스트 광고 ID 강제 설정을 포함한다.
+- 2026-07-06 기준 정식 광고 확인용 `1.0.0+4` AAB 빌드 성공. 산출물: `build/app/outputs/bundle/release/app-release.aab` (약 57.6MB). 이 빌드는 내부/비공개 테스트에서 실제 광고 서빙 상태를 확인하기 위한 후보이며, AdMob/Play 검토 상태에 따라 실제 광고 노출까지 시간이 걸릴 수 있다.
 - [x] Play Console 기본 스토어 등록정보 초안 작성
 - 2026-06-30 기준 `PLAY_STORE_LISTING_KO.md`에 앱 이름, 짧은 설명, 전체 설명, 출시 노트, 스크린샷 준비 목록, 금융/광고/데이터 고지 문구를 정리했다.
 - 2026-06-30 기준 `PRIVACY_POLICY_DRAFT_KO.md`에 개인정보처리방침 초안을 작성했다. 실제 게시 전 운영자 연락처와 공개 URL을 확정해야 한다.
