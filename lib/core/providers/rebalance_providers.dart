@@ -120,7 +120,7 @@ RebalanceCoach buildRebalanceCoach({
             headline: '${resolveInstrumentName(item.ticker, item.name)} 점검',
             reason: '현재 활성 전략 Top ${strategy.topN} 밖에 있어 보유 이유를 다시 확인할 시점입니다.',
             supportingLabel:
-                '보유 ${item.quantity.toStringAsFixed(0)}주 · \$${item.currentValue.toStringAsFixed(2)}',
+                '보유 ${item.quantity.toStringAsFixed(0)}주 · ${formatMarketPrice(item.ticker, item.currentValue)}',
           ),
         ),
     ...overweightHoldings.take(2).map(
@@ -132,7 +132,7 @@ RebalanceCoach buildRebalanceCoach({
             reason:
                 '포트폴리오 비중 ${(weighted.portfolioWeight * 100).toStringAsFixed(0)}%로 집중도가 높습니다.',
             supportingLabel:
-                '현재가 \$${weighted.item.currentPrice.toStringAsFixed(2)}',
+                '현재가 ${formatMarketPrice(weighted.item.ticker, weighted.item.currentPrice)}',
           ),
         ),
     ...missingTopPicks.take(2).map(

@@ -1,6 +1,6 @@
 ﻿# Strategy Workbench Implementation Status
 
-- Last updated: 2026-06-29
+- Last updated: 2026-07-06
 - Purpose: `phase1~6.md`를 매번 다시 읽지 않아도 현재 구현 상태를 빠르게 확인하기 위한 문서
 - Update rule: 구현 또는 리뷰 작업을 한 뒤에는 이 파일의 날짜와 상태부터 먼저 갱신한다.
 - Execution plan: `PHASE3_5_EXECUTION_PLAN.md`
@@ -13,7 +13,7 @@
 | Phase 1 | 대체로 구현 | 앱 셸, 라우팅, 테마, GlassContainer, 디버그 라우트 존재 |
 | Phase 2 | 대체로 구현 | Hive/SQLite, Mock/Hybrid repository, 평단가 계산, 일일 sync, 실데이터 fetch/폴백, KIS 토큰 안전장치, Naver/Nasdaq 키 없는 quote fallback 반영 |
 | Phase 3 | 대체로 구현 | 민감도 저장, 활성 전략, 전략 UI, 퍼센트 기반 백그라운드 알림 연결 완료 |
-| Phase 4 | 대체로 구현 | 상세 화면 위젯 테스트와 포트폴리오→상세 UX 정리까지 반영됨 |
+| Phase 4 | 대체로 구현 | 상세 화면 위젯 테스트, 포트폴리오→상세 UX 정리, 포트폴리오 금액 가독성 개선까지 반영됨 |
 | Phase 5 | 부분 구현 | 테스트 광고 기준 배너/전면 광고/Fail-safe 연결 완료, 개발 빌드 시작 지연 완화와 debug 광고 비활성 스위치 반영 |
 | Phase 6 | 부분 구현 | 오늘의 브리프, 전략 설명, 리밸런싱 코치, 전략 비교, 시장별 전략 리스트, 스냅샷 계산 최적화 반영 |
 
@@ -151,6 +151,8 @@
 - 국내 주식 코드는 6자리 종목코드를 ticker 내부값처럼 사용하며, 입력 시 누락된 앞자리 0을 보정한다.
 - 포트폴리오에 직접 추가된 종목은 전략/마켓 유니버스에 없어도 상세 화면에서 보유 정보 기반 fallback 상세를 표시한다.
 - 상세/전략 리스트 가격 표시는 국내 6자리 코드는 원화, 미국 티커는 달러 형식으로 구분한다.
+- 포트폴리오 요약/보유 상세/리밸런싱 코치 금액 표시는 천 단위 구분과 시장별 통화 표기를 사용한다.
+- 리밸런싱 코치의 보조 금액 정보는 본문 아래 칩 형태로 정리해 긴 원화 금액이 제목/설명과 겹치지 않도록 개선했다.
 - 종목 상세는 같은 날 캐시보다 repository live 조회를 먼저 시도해, 실시간 소스가 가능한 경우 stale/mock 가격 대신 최신 가격을 우선 표시한다.
 - 한국투자증권 live 응답에서 종목명이 비거나 코드로만 올 때도 기본 국내 종목 유니버스 이름으로 보강해 상세/대시보드 이름 표시를 안정화했다.
 
@@ -172,6 +174,7 @@
 - `test/smart_tag_test.dart`
 - `test/stock_detail_providers_test.dart`
 - `test/phase4_ui_test.dart`
+- `test/market_classification_test.dart`
 
 ### Phase 5. Monetization & Final Fail-safe
 

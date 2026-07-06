@@ -86,9 +86,27 @@ String marketFilterLabel(MarketFilter filter) {
 
 String formatMarketPrice(String ticker, double price) {
   if (isKoreanTicker(ticker)) {
-    final formatter = NumberFormat.decimalPattern('ko_KR');
-    return '₩${formatter.format(price.round())}';
+    final formatter = NumberFormat.currency(
+      locale: 'ko_KR',
+      symbol: '₩',
+      decimalDigits: 0,
+    );
+    return formatter.format(price.round());
   }
 
-  return '\$${price.toStringAsFixed(2)}';
+  final formatter = NumberFormat.currency(
+    locale: 'en_US',
+    symbol: r'$',
+    decimalDigits: 2,
+  );
+  return formatter.format(price);
+}
+
+String formatSignedMarketPrice(String ticker, double price) {
+  if (price == 0) {
+    return formatMarketPrice(ticker, 0);
+  }
+
+  final sign = price > 0 ? '+' : '-';
+  return '$sign${formatMarketPrice(ticker, price.abs())}';
 }

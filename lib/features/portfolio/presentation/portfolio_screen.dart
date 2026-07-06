@@ -60,6 +60,7 @@ class _PortfolioScreenState extends ConsumerState<PortfolioScreen> {
               totalValue: totalValue,
               totalGainLoss: totalGainLoss,
               totalGainLossPercent: totalGainLossPercent,
+              portfolio: portfolio,
               s: s,
             ),
             const SizedBox(height: 20),
@@ -107,8 +108,17 @@ class _PortfolioScreenState extends ConsumerState<PortfolioScreen> {
     required double totalValue,
     required double totalGainLoss,
     required double totalGainLossPercent,
+    required List<PortfolioItem> portfolio,
     required dynamic s,
   }) {
+    final moneyTicker = _summaryMoneyTicker(portfolio);
+    final totalCostLabel = formatMarketPrice(moneyTicker, totalCost);
+    final totalValueLabel = formatMarketPrice(moneyTicker, totalValue);
+    final totalGainLossLabel = formatSignedMarketPrice(
+      moneyTicker,
+      totalGainLoss,
+    );
+
     return GlassContainer(
       child: Padding(
         padding: const EdgeInsets.all(16),
@@ -150,47 +160,25 @@ class _PortfolioScreenState extends ConsumerState<PortfolioScreen> {
             ),
             const SizedBox(height: 12),
             Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
-                Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      s.totalInvestment,
-                      style: const TextStyle(
-                        color: Colors.white70,
-                        fontSize: 12,
-                      ),
-                    ),
-                    Text(
-                      '\$${totalCost.toStringAsFixed(2)}',
-                      style: const TextStyle(
-                        color: Colors.white,
-                        fontWeight: FontWeight.bold,
-                        fontSize: 16,
-                      ),
-                    ),
-                  ],
+                Expanded(
+                  child: _buildSummaryAmountColumn(
+                    label: s.totalInvestment,
+                    value: totalCostLabel,
+                    color: Colors.white,
+                    alignment: CrossAxisAlignment.start,
+                    textAlign: TextAlign.left,
+                  ),
                 ),
-                Column(
-                  crossAxisAlignment: CrossAxisAlignment.end,
-                  children: [
-                    Text(
-                      s.currentValue,
-                      style: const TextStyle(
-                        color: Colors.white70,
-                        fontSize: 12,
-                      ),
-                    ),
-                    Text(
-                      '\$${totalValue.toStringAsFixed(2)}',
-                      style: const TextStyle(
-                        color: Color(0xFF10B981),
-                        fontWeight: FontWeight.bold,
-                        fontSize: 16,
-                      ),
-                    ),
-                  ],
+                const SizedBox(width: 12),
+                Expanded(
+                  child: _buildSummaryAmountColumn(
+                    label: s.currentValue,
+                    value: totalValueLabel,
+                    color: const Color(0xFF10B981),
+                    alignment: CrossAxisAlignment.end,
+                    textAlign: TextAlign.right,
+                  ),
                 ),
               ],
             ),
@@ -215,7 +203,9 @@ class _PortfolioScreenState extends ConsumerState<PortfolioScreen> {
                         ),
                       ),
                       Text(
-                        '${totalGainLoss >= 0 ? '+' : ''}\$${totalGainLoss.toStringAsFixed(2)}',
+                        totalGainLossLabel,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
                         style: TextStyle(
                           color: totalGainLoss >= 0
                               ? Colors.green[400]
@@ -255,6 +245,51 @@ class _PortfolioScreenState extends ConsumerState<PortfolioScreen> {
         ),
       ),
     );
+  }
+
+  Widget _buildSummaryAmountColumn({
+    required String label,
+    required String value,
+    required Color color,
+    required CrossAxisAlignment alignment,
+    required TextAlign textAlign,
+  }) {
+    return Column(
+      crossAxisAlignment: alignment,
+      children: [
+        Text(
+          label,
+          style: const TextStyle(
+            color: Colors.white70,
+            fontSize: 12,
+          ),
+        ),
+        Text(
+          value,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+          textAlign: textAlign,
+          style: TextStyle(
+            color: color,
+            fontWeight: FontWeight.bold,
+            fontSize: 16,
+          ),
+        ),
+      ],
+    );
+  }
+
+  String _summaryMoneyTicker(List<PortfolioItem> portfolio) {
+    final regions = portfolio
+        .map((item) => classifyTicker(item.ticker))
+        .where((region) => region != MarketRegion.unknown)
+        .toSet();
+
+    if (regions.length == 1 && regions.single == MarketRegion.korea) {
+      return '000000';
+    }
+
+    return 'AAPL';
   }
 
   Widget _buildRebalanceCoachCard(
@@ -772,11 +807,11 @@ class _PortfolioScreenState extends ConsumerState<PortfolioScreen> {
                           'Quantity', item.quantity.toStringAsFixed(0)),
                       _buildDetailRow(
                         'Avg Price',
-                        '\$${item.avgPrice.toStringAsFixed(2)}',
+                        formatMarketPrice(item.ticker, item.avgPrice),
                       ),
                       _buildDetailRow(
                         'Gain/Loss',
-                        '${item.gainLoss >= 0 ? '+' : ''}\$${item.gainLoss.toStringAsFixed(2)} (${item.gainLossPercent.toStringAsFixed(2)}%)',
+                        '${formatSignedMarketPrice(item.ticker, item.gainLoss)} (${item.gainLossPercent.toStringAsFixed(2)}%)',
                       ),
                     ],
                   ),
@@ -1118,17 +1153,27 @@ class _RebalanceSuggestionRow extends StatelessWidget {
                         height: 1.4,
                       ),
                     ),
+                    const SizedBox(height: 6),
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 8,
+                        vertical: 4,
+                      ),
+                      decoration: BoxDecoration(
+                        color: Colors.white.withValues(alpha: 0.06),
+                        borderRadius: BorderRadius.circular(999),
+                      ),
+                      child: Text(
+                        suggestion.supportingLabel,
+                        style: const TextStyle(
+                          color: Colors.white60,
+                          fontSize: 10,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ),
                   ],
                 ),
-              ),
-              const SizedBox(width: 12),
-              Text(
-                suggestion.supportingLabel,
-                style: const TextStyle(
-                  color: Colors.white38,
-                  fontSize: 10,
-                ),
-                textAlign: TextAlign.right,
               ),
             ],
           ),
