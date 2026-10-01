@@ -74,6 +74,7 @@ class NasdaqStockRepository {
         roe: 0,
         dividendYield: 0,
         lastUpdated: DateTime.now(),
+        priceSource: 'Nasdaq',
       );
     } on ApiException catch (error) {
       developer.log(

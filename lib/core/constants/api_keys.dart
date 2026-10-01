@@ -142,32 +142,49 @@ class ApiKeys {
       bool.fromEnvironment('FORCE_ADMOB_TEST_IDS');
   static bool get usesAdmobTestIds => kDebugMode || _forceAdmobTestIds;
 
-  static String get admobAndroidAppId => usesAdmobTestIds
-      ? admobAndroidTestAppId
-      : _env('ADMOB_ANDROID_APP_ID', fallback: admobAndroidTestAppId);
-  static String get admobIosAppId => usesAdmobTestIds
-      ? admobIosTestAppId
-      : _env('ADMOB_IOS_APP_ID', fallback: admobIosTestAppId);
+  @visibleForTesting
+  static String resolveAdmobId({
+    required bool useTestIds,
+    required String testId,
+    required String productionId,
+  }) {
+    return useTestIds ? testId : productionId;
+  }
 
-  static String get admobAndroidBannerId => usesAdmobTestIds
-      ? admobAndroidTestBannerId
-      : _env('ADMOB_ANDROID_BANNER_ID', fallback: admobAndroidTestBannerId);
-  static String get admobIosBannerId => usesAdmobTestIds
-      ? admobIosTestBannerId
-      : _env('ADMOB_IOS_BANNER_ID', fallback: admobIosTestBannerId);
+  // Never silently ship Google's sample ad units in a production build.
+  // Missing production values disable that ad placement instead.
+  static String get admobAndroidAppId => resolveAdmobId(
+        useTestIds: usesAdmobTestIds,
+        testId: admobAndroidTestAppId,
+        productionId: _env('ADMOB_ANDROID_APP_ID'),
+      );
+  static String get admobIosAppId => resolveAdmobId(
+        useTestIds: usesAdmobTestIds,
+        testId: admobIosTestAppId,
+        productionId: _env('ADMOB_IOS_APP_ID'),
+      );
 
-  static String get admobAndroidInterstitialId => usesAdmobTestIds
-      ? admobAndroidTestInterstitialId
-      : _env(
-          'ADMOB_ANDROID_INTERSTITIAL_ID',
-          fallback: admobAndroidTestInterstitialId,
-        );
-  static String get admobIosInterstitialId => usesAdmobTestIds
-      ? admobIosTestInterstitialId
-      : _env(
-          'ADMOB_IOS_INTERSTITIAL_ID',
-          fallback: admobIosTestInterstitialId,
-        );
+  static String get admobAndroidBannerId => resolveAdmobId(
+        useTestIds: usesAdmobTestIds,
+        testId: admobAndroidTestBannerId,
+        productionId: _env('ADMOB_ANDROID_BANNER_ID'),
+      );
+  static String get admobIosBannerId => resolveAdmobId(
+        useTestIds: usesAdmobTestIds,
+        testId: admobIosTestBannerId,
+        productionId: _env('ADMOB_IOS_BANNER_ID'),
+      );
+
+  static String get admobAndroidInterstitialId => resolveAdmobId(
+        useTestIds: usesAdmobTestIds,
+        testId: admobAndroidTestInterstitialId,
+        productionId: _env('ADMOB_ANDROID_INTERSTITIAL_ID'),
+      );
+  static String get admobIosInterstitialId => resolveAdmobId(
+        useTestIds: usesAdmobTestIds,
+        testId: admobIosTestInterstitialId,
+        productionId: _env('ADMOB_IOS_INTERSTITIAL_ID'),
+      );
 
   static String get admobBannerId {
     switch (defaultTargetPlatform) {

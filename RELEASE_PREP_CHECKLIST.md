@@ -1,13 +1,22 @@
 # Strategy Workbench Release Prep Checklist
 
-- Last updated: 2026-07-06
+- Last updated: 2026-07-10
 - Purpose: 배포 전 남은 외부 계정, API 키, AdMob, Play Store 준비물을 빠르게 확인하기 위한 체크리스트
+- Personal developer release plan: `PERSONAL_DEVELOPER_RELEASE_PLAN.md`
 
 ## Current Code State
 
 - 테스트 광고 기준 AdMob 배너/전면 광고 흐름은 구현되어 있다.
 - 2026-07-06 기준 내부 테스트 확인용 빌드는 `1.0.0+3`이며, 포트폴리오 금액 가독성 개선과 테스트 광고 강제 설정(`FORCE_ADMOB_TEST_IDS=true`)을 포함한다.
 - 2026-07-06 기준 정식 광고 확인용 출시 후보 빌드는 `1.0.0+4`이며, `FORCE_ADMOB_TEST_IDS=true`를 제거하고 실제 Android AdMob App ID / banner ID / interstitial ID를 `--dart-define`으로 주입해 AAB를 생성했다.
+- 2026-07-06 기준 Play Console 검토에서 개인 개발자 계정 + `주식 거래 및 포트폴리오 관리` 금융 기능 선언 조합이 `Play Console Requirements` 위반으로 거절되었다.
+- 단기 출시 방향은 조직 계정이 아니라 개인 개발자 계정 유지이며, 이를 위해 `PERSONAL_DEVELOPER_RELEASE_PLAN.md`의 `Personal Store Mode`로 금융/포트폴리오 관리 기능을 숨기는 계획을 따른다.
+- 현재 `1.0.0+4` 전체 금융/포트폴리오 기능 빌드는 개인 개발자 계정용으로 재제출하지 않는다.
+- 2026-07-10 기준 `STORE_VARIANT=personal` 개인 출시 모드의 최신 내부 테스트 확인 버전은 `1.0.0+12`다. 기능 변경 없는 비공개 알파 후보는 실제 AdMob 설정을 적용한 `1.0.0+13`이다.
+- `1.0.0+10`은 내부 테스트 안전을 위해 `FORCE_ADMOB_TEST_IDS=true`로 빌드했다. AAB 생성과 원본/복사본 SHA-256 일치 확인, Play 내부 테스트 설치본의 기본 동작 확인을 완료했다.
+- 2026-07-10 기준 `1.0.0+12` Wave C AAB의 Play 내부 테스트 확인을 완료했다. 다음 단계는 `1.0.0+13`을 비공개 테스트 트랙에 배포하는 것이다.
+- 개인 출시 모드는 하단 포트폴리오 탭, `/portfolio` 직접 접근, 포트폴리오 기반 대시보드 섹션, 종목 상세 거래 타임라인, 백그라운드 포트폴리오 알림을 숨긴다.
+- 개인 출시용 스토어 문구 초안은 `PLAY_STORE_LISTING_PERSONAL_KO.md`를 기준으로 한다.
 - 개발 빌드에서 AdMob 테스트 ID가 기본 사용된다.
 - 실제 운영용 AdMob App ID / ad unit ID는 아직 `.env`에 넣어야 한다.
 - Android AdMob App ID / banner ID / interstitial ID는 2026-06-25 기준 로컬 `.env`에 반영했다. 실제 값은 Git에 커밋하지 않는다.
@@ -64,7 +73,9 @@
 - Google Play Console 개발자 계정 등록
 - 개발자 등록비는 공식 안내 기준 US$25 one-time registration fee이다.
 - 계정 유형 선택: 개인 또는 조직
-- 이 앱은 투자/주식 데이터를 다루므로 Play Console 계정 유형과 스토어 문구를 신중히 정한다. Google Play는 금융 상품/서비스를 제공하는 경우 조직 계정 선택을 안내한다.
+- 2026-07-06 기준 현재 사업자등록/D-U-N-S 기반 조직 계정은 단기 선택지가 아니므로 개인 개발자 계정 출시용 앱 범위를 축소한다.
+- 이 앱의 전체 기능은 투자/주식 데이터를 다루므로 Play Console 계정 유형과 스토어 문구를 신중히 정한다. Google Play는 금융 상품/서비스를 제공하는 경우 조직 계정 선택을 안내한다.
+- 개인 개발자 계정 출시 빌드에서는 포트폴리오/매수매도/리밸런싱/보유 종목 평가/편입 후보 기능을 제거하거나 숨긴 뒤, 앱 성격을 시장 지표 학습/전략 시뮬레이션으로 재정의한다.
 - 신원/연락처 정보 검증
 - 결제 수단으로 개발자 등록비 결제
 - 앱 패키지명 확정
@@ -76,6 +87,30 @@
 - 현재 Android `applicationId`는 `com.round1studio.strategyworkbench`로 정리했다. Play 업로드 전 이 패키지명을 최종 확정해야 하며, 한 번 Play에 등록하면 바꾸기 어렵다.
 
 ## Codex-Owned Follow-Up Tasks
+
+- Release Blocker 0 - 개인 개발자 계정 정책 대응
+- [x] Play Console 거절 사유를 `PERSONAL_DEVELOPER_RELEASE_PLAN.md`에 기록한다.
+- [x] `STORE_VARIANT=personal` 또는 동등한 빌드 플래그를 추가한다.
+- [x] 개인 출시 모드에서 `포트폴리오` 탭과 `/portfolio` 라우트를 숨기거나 안전한 안내 화면으로 전환한다.
+- [x] 개인 출시 모드와 release 빌드에서 `/debug` 내부 점검 라우트를 숨긴다.
+- [x] 개인 출시 모드에서 리밸런싱 코치, 추천 액션, 편입 후보, 보유 종목 기반 대시보드 문구를 제거한다.
+- [x] 종목 상세에서 거래 내역과 추천/편입 문구를 제거하고 지표 해설 중심으로 바꾼다.
+- [x] `PLAY_STORE_LISTING_KO.md`, 개인정보처리방침, Play Console 앱 콘텐츠 선언을 개인 출시 모드와 일치하도록 다시 작성한다. 개인 출시용 초안은 `PLAY_STORE_LISTING_PERSONAL_KO.md`에 분리했다.
+- 2026-07-06 기준 Play Console 기본 스토어 등록정보에 남아 있던 포트폴리오/리밸런싱 중심 문구를 제거할 수 있도록 `PLAY_STORE_LISTING_KO.md`를 개인 출시 모드 기준으로 갱신했다.
+- [x] 새 버전 코드로 개인 출시 모드 AAB를 생성한다.
+- [x] 생성된 개인 출시 모드 `1.0.0+9` AAB를 내부 테스트에 업로드하고 실기기에서 스토어 설치 플로우, 주요 기능, 테스트 광고 노출을 검증한다.
+- [ ] 검증된 개인 출시 모드 AAB를 비공개 테스트에 배포하고 12명 이상이 14일 연속 opt-in 상태를 유지하도록 관리한다.
+- 2026-07-06 기준 `flutter build appbundle --release --no-tree-shake-icons --dart-define=STORE_VARIANT=personal` 성공. 산출물: `build/app/outputs/bundle/release/app-release.aab` (약 57.5MB, version code 5).
+- 2026-07-06 기준 스토어 문구/그래픽과 앱 UI의 `학습 기준` 표현을 `분석 기준`으로 정리했고, `1.0.0+6` 개인 출시 모드 AAB 재빌드에 성공했다. 산출물: `build/app/outputs/bundle/release/app-release.aab` (약 57.5MB, version code 6).
+- 2026-07-07 기준 분석 기준 비교 인사이트, 종목 상세 지표 해설 강화, 광고 로드 재시도 개선 후 `1.0.0+7` 개인 출시 모드 AAB 재빌드에 성공했다. 업로드용 복사본: `build/app/outputs/bundle/release/strategy_workbench_1.0.0_7_personal_internal.aab` (약 57.5MB, version code 7).
+- 2026-07-07 기준 지표 브리프 카드 설명 바텀시트와 전략 비교 공통/전용 샘플 표시 보강 후 `1.0.0+8` 개인 출시 모드 AAB 재빌드에 성공했다. 업로드용 복사본: `build/app/outputs/bundle/release/strategy_workbench_1.0.0_8_personal_internal.aab` (약 57.6MB, version code 8).
+- 2026-07-10 기준 종목 상세 지표 기여도와 앱 내 지표 사전 추가 후 `1.0.0+9` 개인 출시 모드 AAB 재빌드에 성공했다. 업로드용 복사본: `build/app/outputs/bundle/release/strategy_workbench_1.0.0_9_personal_internal.aab` (약 57.8MB, version code 9).
+- 2026-07-10 기준 분석 기준 실험실과 데이터 확인 정보 추가 후 `1.0.0+10` 개인 출시 모드 AAB 재빌드에 성공했다. 업로드용 복사본: `build/app/outputs/bundle/release/strategy_workbench_1.0.0_10_personal_internal.aab` (60,800,620 bytes, version code 10, 테스트 광고 강제).
+- 2026-07-10 기준 `1.0.0+10` Play 내부 테스트 확인을 완료했다. Wave A는 종료하고 Wave B `종목 직접 비교 + 비교 리포트` 구현으로 진행한다.
+- 2026-07-10 기준 종목 직접 비교와 전략 비교 리포트 강화를 포함한 `1.0.0+11` 개인 출시 모드 AAB 재빌드에 성공했다. 업로드용 복사본: `build/app/outputs/bundle/release/strategy_workbench_1.0.0_11_personal_internal.aab` (60,914,246 bytes, version code 11, 테스트 광고 강제).
+- 2026-07-10 기준 `1.0.0+11` Play 내부 테스트 확인을 완료해 Wave B를 종료했다.
+- 2026-07-10 기준 관찰 메모와 분석 실험 기록을 포함한 `1.0.0+12` 개인 출시 모드 AAB 빌드에 성공했다. 업로드용 복사본: `build/app/outputs/bundle/release/strategy_workbench_1.0.0_12_personal_internal.aab` (61,219,757 bytes, SHA-256 `4B839BFE5DED1342E74329BF9AEA40AC58AA222F721E2E4B194884922B3C1A30`, 테스트 광고 강제). 다음 단계는 Play 내부 테스트 설치 확인이다.
+- 2026-07-10 기준 `1.0.0+12`의 Play 내부 테스트 확인을 완료했다. 기능 변경 없이 실제 AdMob 설정을 적용한 `1.0.0+13` 비공개 알파 AAB를 생성했다. 업로드용 복사본: `build/app/outputs/bundle/release/strategy_workbench_1.0.0_13_personal_closed_alpha.aab` (61,223,830 bytes, SHA-256 `B007B5B42D2F249EE24C9A40779393FA2D4DBCF54AC24425F5C697048D13A906`). AAB 내 `.env`, `key.properties`, upload keystore 미포함과 실제 배너/전면 광고 ID 주입을 확인했다.
 
 - Release Blocker 1 - 출시용 데이터 소스 정리
 - [x] release/profile 빌드에서 `KOR_INVESTMENT_*` 직접 호출을 차단한다.
@@ -118,6 +153,7 @@
 - 2026-07-03 기준 GitHub Pages 게시용 개인정보처리방침 `docs/privacy-policy.md`와 안내 페이지 `docs/index.md`를 추가했다. Pages URL은 보통 `https://darren83kim.github.io/StrategyWorkbench/privacy-policy/`이다.
 - [ ] Play Console 스토어 등록정보에 `assets/store/icon_512.png` 업로드
 - [ ] Play Console 스토어 등록정보에 `assets/store/feature_graphic_1024x500.png` 업로드
+- 2026-07-06 기준 개인 출시 모드에 맞춰 피처 그래픽 문구에서 포트폴리오/리밸런싱/Top Picks 표현을 제거했다. 재생성 스크립트는 `tool/generate_store_feature_graphic.ps1`이다.
 - [ ] Play Console 스토어 등록정보에 스크린샷 업로드
 - [ ] GitHub Pages를 활성화한 뒤 개인정보처리방침 URL을 Play Console에 입력
 - [ ] Gradle 8.14+, Android Gradle Plugin 8.11.1+, Kotlin 2.2.20+ 업그레이드 경고 정리
@@ -133,6 +169,8 @@
 
 - Google Play Console 시작: https://support.google.com/googleplay/android-developer/answer/6112435
 - Play Console 계정 생성 필요 정보: https://support.google.com/googleplay/android-developer/answer/13628312
+- Google Play 개발자 계정 유형 선택: https://support.google.com/googleplay/android-developer/answer/13634885
+- Google Play Financial Services policy: https://support.google.com/googleplay/android-developer/answer/9876821
 - AdMob App ID / ad unit ID 찾기: https://support.google.com/admob/answer/7356431
 - AdMob app-ads.txt 검증: https://support.google.com/admob/answer/14538460
 - AdMob app-ads.txt 설정: https://support.google.com/admob/answer/9363762

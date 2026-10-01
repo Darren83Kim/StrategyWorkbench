@@ -137,6 +137,14 @@ class FinnhubStockRepository {
         roe: roe, // Finnhub은 이미 % 단위로 반환 (예: 160.58 = 160.58%)
         dividendYield: dividendYield,
         lastUpdated: DateTime.now(),
+        priceSource: 'Finnhub',
+        metricSources: {
+          if (per > 0) 'per': 'Finnhub',
+          if (roe > 0) 'roe': 'Finnhub',
+          if (dividendYield > 0) 'dividend': 'Finnhub',
+        },
+        metricsUpdatedAt:
+            per > 0 || roe > 0 || dividendYield > 0 ? DateTime.now() : null,
       );
 
       developer.log(

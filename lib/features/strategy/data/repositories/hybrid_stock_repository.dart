@@ -362,7 +362,7 @@ class HybridStockRepository implements StockRepository {
       return stock;
     }
 
-    return _fillMissingFields(stock, fallback);
+    return mergeStockData(stock, fallback);
   }
 }
 
@@ -370,8 +370,7 @@ void _mergeStocksInto(Map<String, Stock> target, List<Stock> incoming) {
   for (final stock in incoming) {
     final key = stock.ticker.toUpperCase();
     final existing = target[key];
-    target[key] =
-        existing == null ? stock : _fillMissingFields(existing, stock);
+    target[key] = existing == null ? stock : mergeStockData(existing, stock);
   }
 }
 
@@ -382,24 +381,70 @@ void _fillExistingStocksFrom(Map<String, Stock> target, List<Stock> incoming) {
     if (existing == null) {
       continue;
     }
-    target[key] = _fillMissingFields(existing, stock);
+    target[key] = mergeStockData(existing, stock);
   }
 }
 
-Stock _fillMissingFields(Stock primary, Stock fallback) {
+Stock mergeStockData(Stock primary, Stock fallback) {
+  final usePrimaryPrice = primary.price > 0;
+  final usePrimaryPer = primary.per > 0;
+  final usePrimaryRoe = primary.roe > 0;
+  final usePrimaryDividend = primary.dividendYield > 0;
+  final per = usePrimaryPer ? primary.per : fallback.per;
+  final roe = usePrimaryRoe ? primary.roe : fallback.roe;
+  final dividend =
+      usePrimaryDividend ? primary.dividendYield : fallback.dividendYield;
+  final metricSources = <String, String>{
+    if (per > 0)
+      'per': _metricSourceFor(
+        usePrimaryPer ? primary : fallback,
+        'per',
+      ),
+    if (roe > 0)
+      'roe': _metricSourceFor(
+        usePrimaryRoe ? primary : fallback,
+        'roe',
+      ),
+    if (dividend > 0)
+      'dividend': _metricSourceFor(
+        usePrimaryDividend ? primary : fallback,
+        'dividend',
+      ),
+  };
+  final metricDates = <DateTime>[
+    if (per > 0)
+      (usePrimaryPer ? primary : fallback).metricsUpdatedAt ??
+          (usePrimaryPer ? primary : fallback).lastUpdated,
+    if (roe > 0)
+      (usePrimaryRoe ? primary : fallback).metricsUpdatedAt ??
+          (usePrimaryRoe ? primary : fallback).lastUpdated,
+    if (dividend > 0)
+      (usePrimaryDividend ? primary : fallback).metricsUpdatedAt ??
+          (usePrimaryDividend ? primary : fallback).lastUpdated,
+  ];
+
   return Stock(
     ticker: primary.ticker,
     name: _pickBetterName(primary, fallback),
-    price: primary.price > 0 ? primary.price : fallback.price,
-    per: primary.per > 0 ? primary.per : fallback.per,
-    roe: primary.roe > 0 ? primary.roe : fallback.roe,
-    dividendYield: primary.dividendYield > 0
-        ? primary.dividendYield
-        : fallback.dividendYield,
+    price: usePrimaryPrice ? primary.price : fallback.price,
+    per: per,
+    roe: roe,
+    dividendYield: dividend,
     lastUpdated: primary.lastUpdated.isAfter(fallback.lastUpdated)
         ? primary.lastUpdated
         : fallback.lastUpdated,
+    priceSource: usePrimaryPrice ? primary.priceSource : fallback.priceSource,
+    metricSources: metricSources,
+    metricsUpdatedAt: metricDates.isEmpty
+        ? null
+        : metricDates.reduce(
+            (latest, date) => date.isAfter(latest) ? date : latest,
+          ),
   );
+}
+
+String _metricSourceFor(Stock stock, String metric) {
+  return stock.metricSources[metric] ?? '출처 미확인';
 }
 
 String _pickBetterName(Stock primary, Stock fallback) {

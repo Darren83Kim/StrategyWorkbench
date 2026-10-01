@@ -4,6 +4,7 @@ import 'dart:developer' as developer;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:strategy_workbench/core/config/store_policy.dart';
 import 'package:strategy_workbench/core/providers/filter_providers.dart';
 import 'package:strategy_workbench/core/providers/snapshot_providers.dart';
 import 'package:strategy_workbench/core/services/alert_runtime_service.dart';
@@ -111,11 +112,13 @@ class _FilterCreationScreenState extends ConsumerState<FilterCreationScreen> {
       await ref
           .read(activeStrategyNameProvider.notifier)
           .setActive(filter.name);
-      unawaited(
-        ref
-            .read(alertRuntimeServiceProvider)
-            .syncForStrategy(strategyName: filter.name),
-      );
+      if (StorePolicy.enablePortfolioAlerts) {
+        unawaited(
+          ref
+              .read(alertRuntimeServiceProvider)
+              .syncForStrategy(strategyName: filter.name),
+        );
+      }
 
       final prefs = await SharedPreferences.getInstance();
       await prefs.remove('snap_v1_${filter.name.replaceAll(' ', '_')}');
@@ -138,7 +141,9 @@ class _FilterCreationScreenState extends ConsumerState<FilterCreationScreen> {
           }
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
-              content: Text('${filter.name} 전략이 저장되고 활성 전략으로 설정됐습니다.'),
+              content: Text(StorePolicy.isPersonalMode
+                  ? '${filter.name} 전략이 저장되고 분석 기준으로 설정됐습니다.'
+                  : '${filter.name} 전략이 저장되고 활성 전략으로 설정됐습니다.'),
               backgroundColor: const Color(0xFF10B981),
             ),
           );
@@ -166,7 +171,13 @@ class _FilterCreationScreenState extends ConsumerState<FilterCreationScreen> {
     return Scaffold(
       backgroundColor: const Color(0xFF0F172A),
       appBar: AppBar(
-        title: Text(isEditing ? '전략 수정' : '전략 만들기'),
+        title: Text(StorePolicy.isPersonalMode
+            ? isEditing
+                ? '분석 기준 수정'
+                : '분석 기준 만들기'
+            : isEditing
+                ? '전략 수정'
+                : '전략 만들기'),
         backgroundColor: Colors.transparent,
         elevation: 0,
       ),
@@ -181,7 +192,7 @@ class _FilterCreationScreenState extends ConsumerState<FilterCreationScreen> {
                 child: TextField(
                   controller: _nameController,
                   decoration: const InputDecoration(
-                    hintText: '전략 이름',
+                    hintText: StorePolicy.isPersonalMode ? '분석 기준 이름' : '전략 이름',
                     hintStyle: TextStyle(color: Colors.white30),
                     border: InputBorder.none,
                     prefixIcon: Icon(Icons.bookmark, color: Colors.white70),
@@ -277,7 +288,7 @@ class _FilterCreationScreenState extends ConsumerState<FilterCreationScreen> {
             ),
             const SizedBox(height: 20),
             const Text(
-              '검색 종목 수 (Top N)',
+              StorePolicy.isPersonalMode ? '샘플 종목 수' : '검색 종목 수 (Top N)',
               style: TextStyle(
                 color: Colors.white,
                 fontSize: 14,
@@ -290,7 +301,9 @@ class _FilterCreationScreenState extends ConsumerState<FilterCreationScreen> {
               children: _topNOptions.map((option) {
                 final selected = _topN == option;
                 return ChoiceChip(
-                  label: Text('Top $option'),
+                  label: Text(StorePolicy.isPersonalMode
+                      ? '샘플 $option'
+                      : 'Top $option'),
                   selected: selected,
                   onSelected: (_) => setState(() => _topN = option),
                   selectedColor: const Color(0xFF10B981),
@@ -309,7 +322,7 @@ class _FilterCreationScreenState extends ConsumerState<FilterCreationScreen> {
             ),
             const SizedBox(height: 24),
             const Text(
-              '알림 민감도',
+              StorePolicy.isPersonalMode ? '변화 감지 범위' : '알림 민감도',
               style: TextStyle(
                 color: Colors.white,
                 fontSize: 14,
@@ -359,7 +372,9 @@ class _FilterCreationScreenState extends ConsumerState<FilterCreationScreen> {
                     ? '처리 중...'
                     : isEditing
                         ? '수정 저장'
-                        : '전략 저장'),
+                        : StorePolicy.isPersonalMode
+                            ? '분석 기준 저장'
+                            : '전략 저장'),
                 style: ElevatedButton.styleFrom(
                   backgroundColor: const Color(0xFF10B981),
                   foregroundColor: Colors.white,

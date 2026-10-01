@@ -35,6 +35,8 @@ void main() {
     );
     await tester.pumpAndSettle();
 
+    expect(find.textContaining('not financial advice'), findsOneWidget);
+
     expect(find.text('설정되지 않음'), findsOneWidget);
     expect(find.text('활성화'), findsAtLeastNWidgets(1));
 
@@ -72,7 +74,7 @@ void main() {
             (ref) async => const {
               'AAPL': StockInsightViewModel(
                 strategyName: '가치주',
-                headline: '가치주 기준 상위 추천 종목입니다.',
+                headline: '가치주 기준 상위 지표 샘플입니다.',
                 summary: '현재 가치주 Top 10 안에서 #1 입니다.',
                 drivers: [
                   StockInsightDriver(
@@ -194,7 +196,8 @@ void main() {
 
     expect(find.text('전략 비교'), findsOneWidget);
     expect(find.text('겹치는 종목'), findsOneWidget);
-    expect(find.text('AAPL'), findsOneWidget);
-    expect(find.textContaining('L #1 · R #4'), findsOneWidget);
+    expect(find.text('AAPL'), findsWidgets);
+    expect(find.textContaining('가치주 #1 · 배당주 #4'), findsWidgets);
+    expect(find.text('겹치는 종목 · 두 기준 모두 포함'), findsOneWidget);
   });
 }

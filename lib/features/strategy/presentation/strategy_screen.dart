@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import 'package:strategy_workbench/core/config/store_policy.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:strategy_workbench/core/market/market_classification.dart';
 import 'package:strategy_workbench/core/providers/filter_providers.dart';
@@ -76,16 +77,20 @@ class _StrategyScreenState extends ConsumerState<StrategyScreen> {
 
   Future<void> _setActiveStrategy(String strategyName) async {
     await ref.read(activeStrategyNameProvider.notifier).setActive(strategyName);
-    unawaited(
-      ref
-          .read(alertRuntimeServiceProvider)
-          .syncForStrategy(strategyName: strategyName),
-    );
+    if (StorePolicy.enablePortfolioAlerts) {
+      unawaited(
+        ref
+            .read(alertRuntimeServiceProvider)
+            .syncForStrategy(strategyName: strategyName),
+      );
+    }
     if (!mounted) return;
 
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
-        content: Text('$strategyName 전략이 활성 전략으로 설정됐습니다.'),
+        content: Text(StorePolicy.isPersonalMode
+            ? '$strategyName 전략이 분석 기준으로 설정됐습니다.'
+            : '$strategyName 전략이 활성 전략으로 설정됐습니다.'),
         backgroundColor: const Color(0xFF10B981),
       ),
     );
@@ -102,7 +107,11 @@ class _StrategyScreenState extends ConsumerState<StrategyScreen> {
         presetStrategies.any((preset) => preset.name == strategy.name);
     if (activeStrategyName == strategy.name && !hasPresetReplacement) {
       await ref.read(activeStrategyNameProvider.notifier).setActive(null);
-      unawaited(AlertRuntimeService.shared.syncForStrategy(strategyName: null));
+      if (StorePolicy.enablePortfolioAlerts) {
+        unawaited(
+          AlertRuntimeService.shared.syncForStrategy(strategyName: null),
+        );
+      }
     }
 
     if (!mounted) return;
@@ -131,6 +140,30 @@ class _StrategyScreenState extends ConsumerState<StrategyScreen> {
         backgroundColor: Colors.transparent,
         elevation: 0,
         actions: [
+          IconButton(
+            icon: const Icon(Icons.science_outlined),
+            tooltip: lang == 'ko' ? '분석 기준 실험실' : 'Analysis Lab',
+            onPressed: strategies.isEmpty
+                ? null
+                : () {
+                    final strategyName =
+                        activeStrategy?.name ?? strategies.first.name;
+                    context.push(
+                      Uri(
+                        path: '/analysis-lab',
+                        queryParameters: {
+                          'strategy': strategyName,
+                          'market': _marketFilter.name,
+                        },
+                      ).toString(),
+                    );
+                  },
+          ),
+          IconButton(
+            icon: const Icon(Icons.menu_book_rounded),
+            tooltip: lang == 'ko' ? '지표 사전' : 'Metric Dictionary',
+            onPressed: () => context.push('/metric-dictionary'),
+          ),
           IconButton(
             icon: const Icon(Icons.compare_arrows_rounded),
             tooltip: strings.strategyCompareAction,
@@ -161,7 +194,9 @@ class _StrategyScreenState extends ConsumerState<StrategyScreen> {
                         borderRadius: BorderRadius.circular(12),
                       ),
                       child: const Icon(
-                        Icons.notifications_active_outlined,
+                        StorePolicy.isPersonalMode
+                            ? Icons.insights_rounded
+                            : Icons.notifications_active_outlined,
                         color: Color(0xFF10B981),
                       ),
                     ),
@@ -171,7 +206,9 @@ class _StrategyScreenState extends ConsumerState<StrategyScreen> {
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           const Text(
-                            '현재 활성 전략',
+                            StorePolicy.isPersonalMode
+                                ? '현재 분석 기준'
+                                : '현재 활성 전략',
                             style: TextStyle(
                               color: Colors.white70,
                               fontSize: 11,
@@ -189,7 +226,9 @@ class _StrategyScreenState extends ConsumerState<StrategyScreen> {
                           if (activeStrategy != null) ...[
                             const SizedBox(height: 4),
                             Text(
-                              'Top ${activeStrategy.topN} · ${_sensitivityLabel(activeStrategy.sensitivity)}',
+                              StorePolicy.isPersonalMode
+                                  ? '샘플 ${activeStrategy.topN} · 지표 비교 기준'
+                                  : 'Top ${activeStrategy.topN} · ${_sensitivityLabel(activeStrategy.sensitivity)}',
                               style: const TextStyle(
                                 color: Colors.white54,
                                 fontSize: 11,
@@ -213,6 +252,31 @@ class _StrategyScreenState extends ConsumerState<StrategyScreen> {
                   _marketFilter = value;
                 });
               },
+            ),
+          ),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+            child: Row(
+              children: [
+                const Icon(
+                  Icons.info_outline_rounded,
+                  size: 15,
+                  color: Colors.white38,
+                ),
+                const SizedBox(width: 7),
+                Expanded(
+                  child: Text(
+                    lang == 'ko'
+                        ? '표시되는 순위와 지표는 학습용 상대 비교이며 투자 자문이나 매수/매도 권유가 아닙니다.'
+                        : 'Rankings and indicators are for comparative learning, not financial advice or a buy/sell recommendation.',
+                    style: const TextStyle(
+                      color: Colors.white38,
+                      fontSize: 10,
+                      height: 1.35,
+                    ),
+                  ),
+                ),
+              ],
             ),
           ),
           Expanded(
@@ -550,6 +614,12 @@ class _StrategyComparisonResult extends ConsumerWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
+            _ComparisonInsightPanel(comparison: comparison),
+            if (comparison.weightDeltas.isNotEmpty) ...[
+              const SizedBox(height: 16),
+              _ComparisonWeightSection(comparison: comparison),
+            ],
+            const SizedBox(height: 16),
             Row(
               children: [
                 Expanded(
@@ -557,6 +627,7 @@ class _StrategyComparisonResult extends ConsumerWidget {
                     label: s.strategyCompareOverlap,
                     value: comparison.overlap.length.toString(),
                     accent: const Color(0xFF10B981),
+                    helper: '아래 목록',
                   ),
                 ),
                 const SizedBox(width: 8),
@@ -565,6 +636,7 @@ class _StrategyComparisonResult extends ConsumerWidget {
                     label: s.strategyCompareOnlyLeft,
                     value: comparison.onlyLeft.length.toString(),
                     accent: const Color(0xFF60A5FA),
+                    helper: comparison.leftStrategy.name,
                   ),
                 ),
                 const SizedBox(width: 8),
@@ -573,6 +645,7 @@ class _StrategyComparisonResult extends ConsumerWidget {
                     label: s.strategyCompareOnlyRight,
                     value: comparison.onlyRight.length.toString(),
                     accent: const Color(0xFFFB923C),
+                    helper: comparison.rightStrategy.name,
                   ),
                 ),
               ],
@@ -584,6 +657,13 @@ class _StrategyComparisonResult extends ConsumerWidget {
                 style: const TextStyle(color: Colors.white70, fontSize: 12),
               )
             else ...[
+              _ComparisonOverlapSection(
+                title: '${s.strategyCompareOverlap} · 두 기준 모두 포함',
+                matches: comparison.overlap,
+                leftStrategyName: comparison.leftStrategy.name,
+                rightStrategyName: comparison.rightStrategy.name,
+              ),
+              const SizedBox(height: 16),
               Text(
                 s.strategyCompareTopDiffs,
                 style: const TextStyle(
@@ -594,14 +674,17 @@ class _StrategyComparisonResult extends ConsumerWidget {
               ),
               const SizedBox(height: 8),
               ...comparison.topRankDiffs.map(
-                (match) => _ComparisonRankGapRow(match: match),
+                (match) => _ComparisonRankGapRow(
+                  match: match,
+                  leftStrategyName: comparison.leftStrategy.name,
+                  rightStrategyName: comparison.rightStrategy.name,
+                ),
               ),
             ],
             if (comparison.onlyLeft.isNotEmpty) ...[
               const SizedBox(height: 12),
               _ComparisonChipSection(
-                title:
-                    '${comparison.leftStrategy.name} · ${s.strategyCompareOnlyLeft}',
+                title: '${comparison.leftStrategy.name}에만 있는 샘플',
                 stocks: comparison.onlyLeft,
                 accent: const Color(0xFF60A5FA),
               ),
@@ -609,8 +692,7 @@ class _StrategyComparisonResult extends ConsumerWidget {
             if (comparison.onlyRight.isNotEmpty) ...[
               const SizedBox(height: 12),
               _ComparisonChipSection(
-                title:
-                    '${comparison.rightStrategy.name} · ${s.strategyCompareOnlyRight}',
+                title: '${comparison.rightStrategy.name}에만 있는 샘플',
                 stocks: comparison.onlyRight,
                 accent: const Color(0xFFFB923C),
               ),
@@ -626,11 +708,13 @@ class _ComparisonStatCard extends StatelessWidget {
   final String label;
   final String value;
   final Color accent;
+  final String? helper;
 
   const _ComparisonStatCard({
     required this.label,
     required this.value,
     required this.accent,
+    this.helper,
   });
 
   @override
@@ -657,17 +741,564 @@ class _ComparisonStatCard extends StatelessWidget {
               fontWeight: FontWeight.bold,
             ),
           ),
+          if (helper != null) ...[
+            const SizedBox(height: 2),
+            Text(
+              helper!,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(color: Colors.white38, fontSize: 9),
+            ),
+          ],
         ],
       ),
     );
   }
 }
 
+class _ComparisonWeightSection extends StatelessWidget {
+  final StrategyComparisonViewModel comparison;
+
+  const _ComparisonWeightSection({required this.comparison});
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const Text(
+          '기준별 가중치 차이',
+          style: TextStyle(
+            color: Colors.white70,
+            fontSize: 12,
+            fontWeight: FontWeight.w600,
+          ),
+        ),
+        const SizedBox(height: 8),
+        ...comparison.weightDeltas.map(
+          (delta) => Padding(
+            padding: const EdgeInsets.only(bottom: 8),
+            child: Row(
+              children: [
+                SizedBox(
+                  width: 42,
+                  child: Text(
+                    delta.label,
+                    style: const TextStyle(
+                      color: Colors.white70,
+                      fontSize: 11,
+                    ),
+                  ),
+                ),
+                Expanded(
+                  child: _ComparisonWeightBar(
+                    label: comparison.leftStrategy.name,
+                    value: delta.leftWeight,
+                    color: const Color(0xFF60A5FA),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: _ComparisonWeightBar(
+                    label: comparison.rightStrategy.name,
+                    value: delta.rightWeight,
+                    color: const Color(0xFFFB923C),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _ComparisonWeightBar extends StatelessWidget {
+  final String label;
+  final double value;
+  final Color color;
+
+  const _ComparisonWeightBar({
+    required this.label,
+    required this.value,
+    required this.color,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: [
+            Expanded(
+              child: Text(
+                label,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(color: Colors.white38, fontSize: 9),
+              ),
+            ),
+            Text(
+              '${(value * 100).round()}%',
+              style: TextStyle(
+                color: color,
+                fontSize: 9,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 3),
+        ClipRRect(
+          borderRadius: BorderRadius.circular(999),
+          child: LinearProgressIndicator(
+            value: value.clamp(0, 1),
+            minHeight: 5,
+            backgroundColor: Colors.white10,
+            valueColor: AlwaysStoppedAnimation(color),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _ComparisonOverlapSection extends StatelessWidget {
+  final String title;
+  final List<StrategyComparisonMatch> matches;
+  final String leftStrategyName;
+  final String rightStrategyName;
+
+  const _ComparisonOverlapSection({
+    required this.title,
+    required this.matches,
+    required this.leftStrategyName,
+    required this.rightStrategyName,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final shown = matches.take(6).toList();
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          title,
+          style: const TextStyle(
+            color: Colors.white70,
+            fontSize: 12,
+            fontWeight: FontWeight.w600,
+          ),
+        ),
+        const SizedBox(height: 8),
+        ...shown.map(
+          (match) => _ComparisonOverlapRow(
+            match: match,
+            leftStrategyName: leftStrategyName,
+            rightStrategyName: rightStrategyName,
+          ),
+        ),
+        if (matches.length > shown.length) ...[
+          const SizedBox(height: 4),
+          Text(
+            '+${matches.length - shown.length}개 더 있음',
+            style: const TextStyle(color: Colors.white38, fontSize: 10),
+          ),
+        ],
+      ],
+    );
+  }
+}
+
+class _ComparisonOverlapRow extends StatelessWidget {
+  final StrategyComparisonMatch match;
+  final String leftStrategyName;
+  final String rightStrategyName;
+
+  const _ComparisonOverlapRow({
+    required this.match,
+    required this.leftStrategyName,
+    required this.rightStrategyName,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final displayName = resolveInstrumentName(match.ticker, match.name);
+    final hasContributionData = match.leftContributions.isNotEmpty ||
+        match.rightContributions.isNotEmpty;
+
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 8),
+      child: Material(
+        color: const Color(0xFF111827),
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(12),
+          side: BorderSide(
+            color: const Color(0xFF10B981).withValues(alpha: 0.18),
+          ),
+        ),
+        clipBehavior: Clip.antiAlias,
+        child: ExpansionTile(
+          tilePadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 2),
+          childrenPadding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
+          iconColor: const Color(0xFF10B981),
+          collapsedIconColor: Colors.white38,
+          leading: Container(
+            width: 36,
+            height: 36,
+            alignment: Alignment.center,
+            decoration: BoxDecoration(
+              color: const Color(0xFF10B981).withValues(alpha: 0.12),
+              borderRadius: BorderRadius.circular(10),
+            ),
+            child: const Icon(
+              Icons.compare_arrows_rounded,
+              color: Color(0xFF10B981),
+              size: 18,
+            ),
+          ),
+          title: Text(
+            displayName,
+            style: const TextStyle(
+              color: Colors.white,
+              fontSize: 13,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+          subtitle: Text(
+            '${match.ticker} · $leftStrategyName #${match.leftStock.rank} · '
+            '$rightStrategyName #${match.rightStock.rank}',
+            maxLines: 2,
+            overflow: TextOverflow.ellipsis,
+            style: const TextStyle(color: Colors.white54, fontSize: 10),
+          ),
+          children: [
+            if (!hasContributionData)
+              const Align(
+                alignment: Alignment.centerLeft,
+                child: Text(
+                  '기여도 데이터를 불러오지 못했습니다.',
+                  style: TextStyle(color: Colors.white38, fontSize: 10),
+                ),
+              )
+            else ...[
+              const Align(
+                alignment: Alignment.centerLeft,
+                child: Text(
+                  '지표별 점수 기여도',
+                  style: TextStyle(
+                    color: Colors.white70,
+                    fontSize: 11,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ),
+              const SizedBox(height: 8),
+              ...['per', 'roe', 'dividend'].map(
+                (key) => _ContributionDeltaRow(
+                  label: _comparisonMetricLabel(key),
+                  leftName: leftStrategyName,
+                  rightName: rightStrategyName,
+                  leftValue: match.leftContributions[key] ?? 0,
+                  rightValue: match.rightContributions[key] ?? 0,
+                ),
+              ),
+              Align(
+                alignment: Alignment.centerRight,
+                child: TextButton.icon(
+                  onPressed: () {
+                    final router = GoRouter.of(context);
+                    Navigator.of(context).pop();
+                    router.push('/market/${match.ticker}');
+                  },
+                  icon: const Icon(Icons.open_in_new_rounded, size: 15),
+                  label: const Text('종목 상세'),
+                ),
+              ),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _ContributionDeltaRow extends StatelessWidget {
+  final String label;
+  final String leftName;
+  final String rightName;
+  final double leftValue;
+  final double rightValue;
+
+  const _ContributionDeltaRow({
+    required this.label,
+    required this.leftName,
+    required this.rightName,
+    required this.leftValue,
+    required this.rightValue,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 8),
+      child: Row(
+        children: [
+          SizedBox(
+            width: 42,
+            child: Text(
+              label,
+              style: const TextStyle(color: Colors.white54, fontSize: 10),
+            ),
+          ),
+          Expanded(
+            child: _ContributionValue(
+              name: leftName,
+              value: leftValue,
+              color: const Color(0xFF60A5FA),
+            ),
+          ),
+          const SizedBox(width: 8),
+          Expanded(
+            child: _ContributionValue(
+              name: rightName,
+              value: rightValue,
+              color: const Color(0xFFFB923C),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _ContributionValue extends StatelessWidget {
+  final String name;
+  final double value;
+  final Color color;
+
+  const _ContributionValue({
+    required this.name,
+    required this.value,
+    required this.color,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      children: [
+        Expanded(
+          child: Text(
+            name,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: const TextStyle(color: Colors.white38, fontSize: 9),
+          ),
+        ),
+        Text(
+          value.toStringAsFixed(1),
+          style: TextStyle(
+            color: color,
+            fontSize: 10,
+            fontWeight: FontWeight.w600,
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+String _comparisonMetricLabel(String key) {
+  switch (key) {
+    case 'per':
+      return 'PER';
+    case 'roe':
+      return 'ROE';
+    case 'dividend':
+      return '배당';
+    default:
+      return key.toUpperCase();
+  }
+}
+
+class _ComparisonInsightPanel extends StatelessWidget {
+  final StrategyComparisonViewModel comparison;
+
+  const _ComparisonInsightPanel({
+    required this.comparison,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: const Color(0xFF111827),
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: const Color(0xFF334155)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Container(
+                width: 34,
+                height: 34,
+                decoration: BoxDecoration(
+                  color: const Color(0xFF10B981).withValues(alpha: 0.16),
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: const Icon(
+                  Icons.query_stats_rounded,
+                  color: Color(0xFF10B981),
+                  size: 19,
+                ),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Text(
+                  comparison.headline,
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 14,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 10),
+          Text(
+            comparison.summary,
+            style: const TextStyle(
+              color: Colors.white70,
+              fontSize: 12,
+              height: 1.45,
+            ),
+          ),
+          const SizedBox(height: 12),
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: [
+              _ComparisonFocusChip(
+                label:
+                    '${comparison.leftStrategy.name}: ${comparison.leftFocusLabel}',
+                accent: const Color(0xFF60A5FA),
+              ),
+              _ComparisonFocusChip(
+                label:
+                    '${comparison.rightStrategy.name}: ${comparison.rightFocusLabel}',
+                accent: const Color(0xFFFB923C),
+              ),
+            ],
+          ),
+          if (comparison.observations.isNotEmpty) ...[
+            const SizedBox(height: 12),
+            ...comparison.observations.map(
+              (observation) => Padding(
+                padding: const EdgeInsets.only(bottom: 8),
+                child: _ComparisonObservationRow(observation: observation),
+              ),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+}
+
+class _ComparisonFocusChip extends StatelessWidget {
+  final String label;
+  final Color accent;
+
+  const _ComparisonFocusChip({
+    required this.label,
+    required this.accent,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+      decoration: BoxDecoration(
+        color: accent.withValues(alpha: 0.12),
+        borderRadius: BorderRadius.circular(999),
+        border: Border.all(color: accent.withValues(alpha: 0.35)),
+      ),
+      child: Text(
+        label,
+        style: TextStyle(
+          color: accent,
+          fontSize: 11,
+          fontWeight: FontWeight.w600,
+        ),
+      ),
+    );
+  }
+}
+
+class _ComparisonObservationRow extends StatelessWidget {
+  final StrategyComparisonObservation observation;
+
+  const _ComparisonObservationRow({
+    required this.observation,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const Padding(
+          padding: EdgeInsets.only(top: 5),
+          child: Icon(
+            Icons.circle,
+            color: Color(0xFF10B981),
+            size: 6,
+          ),
+        ),
+        const SizedBox(width: 8),
+        Expanded(
+          child: RichText(
+            text: TextSpan(
+              style: const TextStyle(
+                color: Colors.white60,
+                fontSize: 11,
+                height: 1.4,
+              ),
+              children: [
+                TextSpan(
+                  text: '${observation.title}: ',
+                  style: const TextStyle(
+                    color: Colors.white70,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+                TextSpan(text: observation.body),
+              ],
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
 class _ComparisonRankGapRow extends StatelessWidget {
   final StrategyComparisonMatch match;
+  final String leftStrategyName;
+  final String rightStrategyName;
 
   const _ComparisonRankGapRow({
     required this.match,
+    required this.leftStrategyName,
+    required this.rightStrategyName,
   });
 
   @override
@@ -675,48 +1306,73 @@ class _ComparisonRankGapRow extends StatelessWidget {
     final isLeftHigher = match.leftStock.rank < match.rightStock.rank;
     final accent =
         isLeftHigher ? const Color(0xFF60A5FA) : const Color(0xFFFB923C);
+    final displayName = resolveInstrumentName(match.ticker, match.name);
 
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 6),
-      child: Row(
-        children: [
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          borderRadius: BorderRadius.circular(12),
+          onTap: () {
+            final router = GoRouter.of(context);
+            Navigator.of(context).pop();
+            router.push('/market/${match.ticker}');
+          },
+          child: Padding(
+            padding: const EdgeInsets.symmetric(vertical: 4),
+            child: Row(
               children: [
-                Text(
-                  match.ticker,
-                  style: const TextStyle(
-                    color: Colors.white,
-                    fontSize: 13,
-                    fontWeight: FontWeight.bold,
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        displayName,
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 13,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                      Text(
+                        match.ticker,
+                        style: const TextStyle(
+                          color: Colors.white38,
+                          fontSize: 10,
+                        ),
+                      ),
+                      Text(
+                        comparisonLabel(
+                            match.leftStock.rank, match.rightStock.rank),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                          color: Colors.white54,
+                          fontSize: 11,
+                        ),
+                      ),
+                    ],
                   ),
                 ),
                 Text(
-                  comparisonLabel(match.leftStock.rank, match.rightStock.rank),
-                  style: const TextStyle(
-                    color: Colors.white54,
+                  '${match.absoluteRankGap}계단 차이',
+                  style: TextStyle(
+                    color: accent,
                     fontSize: 11,
+                    fontWeight: FontWeight.w600,
                   ),
                 ),
               ],
             ),
           ),
-          Text(
-            '${match.absoluteRankGap} rank',
-            style: TextStyle(
-              color: accent,
-              fontSize: 11,
-              fontWeight: FontWeight.w600,
-            ),
-          ),
-        ],
+        ),
       ),
     );
   }
 
   String comparisonLabel(int leftRank, int rightRank) {
-    return 'L #$leftRank · R #$rightRank';
+    return '$leftStrategyName #$leftRank · $rightStrategyName #$rightRank';
   }
 }
 
@@ -751,22 +1407,49 @@ class _ComparisonChipSection extends StatelessWidget {
           children: stocks
               .take(5)
               .map(
-                (stock) => Container(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 10,
-                    vertical: 6,
-                  ),
-                  decoration: BoxDecoration(
-                    color: accent.withValues(alpha: 0.12),
+                (stock) => Material(
+                  color: Colors.transparent,
+                  child: InkWell(
                     borderRadius: BorderRadius.circular(999),
-                    border: Border.all(color: accent.withValues(alpha: 0.35)),
-                  ),
-                  child: Text(
-                    '${stock.ticker} #${stock.rank}',
-                    style: TextStyle(
-                      color: accent,
-                      fontSize: 11,
-                      fontWeight: FontWeight.w600,
+                    onTap: () {
+                      final router = GoRouter.of(context);
+                      Navigator.of(context).pop();
+                      router.push('/market/${stock.ticker}');
+                    },
+                    child: Ink(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 10,
+                        vertical: 6,
+                      ),
+                      decoration: BoxDecoration(
+                        color: accent.withValues(alpha: 0.12),
+                        borderRadius: BorderRadius.circular(999),
+                        border: Border.all(
+                          color: accent.withValues(alpha: 0.35),
+                        ),
+                      ),
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            resolveInstrumentName(stock.ticker, stock.name),
+                            style: TextStyle(
+                              color: accent,
+                              fontSize: 11,
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                          Text(
+                            '${stock.ticker} · #${stock.rank}',
+                            style: TextStyle(
+                              color: accent.withValues(alpha: 0.75),
+                              fontSize: 9,
+                              fontWeight: FontWeight.w500,
+                            ),
+                          ),
+                        ],
+                      ),
                     ),
                   ),
                 ),
@@ -877,7 +1560,7 @@ class _StrategyCard extends ConsumerWidget {
                                   ),
                                 ),
                                 child: const Text(
-                                  '활성',
+                                  StorePolicy.isPersonalMode ? '기준' : '활성',
                                   style: TextStyle(
                                     color: Color(0xFF10B981),
                                     fontSize: 10,
@@ -905,7 +1588,9 @@ class _StrategyCard extends ConsumerWidget {
                         ),
                         const SizedBox(height: 3),
                         Text(
-                          'Top ${strategy.topN} · ${_sensitivityLabel(strategy.sensitivity)}',
+                          StorePolicy.isPersonalMode
+                              ? '샘플 ${strategy.topN} · 지표 비교 기준'
+                              : 'Top ${strategy.topN} · ${_sensitivityLabel(strategy.sensitivity)}',
                           style: const TextStyle(
                             color: Colors.white38,
                             fontSize: 10,
@@ -940,9 +1625,11 @@ class _StrategyCard extends ConsumerWidget {
                           mainAxisSize: MainAxisSize.min,
                           children: [
                             Icon(
-                              isActive
-                                  ? Icons.notifications_active_rounded
-                                  : Icons.notifications_none_rounded,
+                              StorePolicy.isPersonalMode
+                                  ? Icons.insights_rounded
+                                  : isActive
+                                      ? Icons.notifications_active_rounded
+                                      : Icons.notifications_none_rounded,
                               color: isActive
                                   ? const Color(0xFF10B981)
                                   : Colors.white54,
@@ -950,7 +1637,13 @@ class _StrategyCard extends ConsumerWidget {
                             ),
                             const SizedBox(width: 6),
                             Text(
-                              isActive ? '활성 전략' : '활성화',
+                              StorePolicy.isPersonalMode
+                                  ? isActive
+                                      ? '분석 기준'
+                                      : '기준 설정'
+                                  : isActive
+                                      ? '활성 전략'
+                                      : '활성화',
                               style: TextStyle(
                                 color: isActive
                                     ? const Color(0xFF10B981)
@@ -1063,6 +1756,8 @@ class _StrategyCard extends ConsumerWidget {
                           (stock) => _StockRow(
                             stock: stock,
                             isWatched: watchedTickers.contains(stock.ticker),
+                            onOpenDetails: () =>
+                                context.push('/market/${stock.ticker}'),
                             onToggle: () => onToggleWatch(stock.ticker),
                             insight: insightMap[stock.ticker.toUpperCase()],
                             isInsightLoading: insightsLoading,
@@ -1096,6 +1791,7 @@ class _StrategyCard extends ConsumerWidget {
 class _StockRow extends StatelessWidget {
   final SnapshotStock stock;
   final bool isWatched;
+  final VoidCallback onOpenDetails;
   final VoidCallback onToggle;
   final StockInsightViewModel? insight;
   final bool isInsightLoading;
@@ -1103,6 +1799,7 @@ class _StockRow extends StatelessWidget {
   const _StockRow({
     required this.stock,
     required this.isWatched,
+    required this.onOpenDetails,
     required this.onToggle,
     required this.insight,
     required this.isInsightLoading,
@@ -1113,7 +1810,7 @@ class _StockRow extends StatelessWidget {
     final displayName = resolveInstrumentName(stock.ticker, stock.name);
 
     return InkWell(
-      onTap: onToggle,
+      onTap: onOpenDetails,
       child: Padding(
         padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 9),
         child: Row(
@@ -1154,7 +1851,9 @@ class _StockRow extends StatelessWidget {
                   const SizedBox(height: 2),
                   Text(
                     isInsightLoading
-                        ? '전략 기준 설명 생성 중...'
+                        ? StorePolicy.isPersonalMode
+                            ? '지표 설명 생성 중...'
+                            : '전략 기준 설명 생성 중...'
                         : insight?.compactSummary ??
                             '점수 ${stock.score.toStringAsFixed(1)} 기준으로 정렬된 종목입니다.',
                     style: const TextStyle(color: Colors.white30, fontSize: 10),
@@ -1178,10 +1877,17 @@ class _StockRow extends StatelessWidget {
               ),
             ),
             const SizedBox(width: 8),
-            Icon(
-              isWatched ? Icons.star_rounded : Icons.star_border_rounded,
-              color: isWatched ? const Color(0xFFF59E0B) : Colors.white30,
-              size: 22,
+            GestureDetector(
+              behavior: HitTestBehavior.opaque,
+              onTap: onToggle,
+              child: Padding(
+                padding: const EdgeInsets.all(4),
+                child: Icon(
+                  isWatched ? Icons.star_rounded : Icons.star_border_rounded,
+                  color: isWatched ? const Color(0xFFF59E0B) : Colors.white30,
+                  size: 22,
+                ),
+              ),
             ),
           ],
         ),
@@ -1214,7 +1920,7 @@ class _TopNChip extends StatelessWidget {
               const Padding(
                 padding: EdgeInsets.fromLTRB(16, 16, 16, 8),
                 child: Text(
-                  'Top N 설정',
+                  StorePolicy.isPersonalMode ? '샘플 수 설정' : 'Top N 설정',
                   style: TextStyle(
                     color: Colors.white,
                     fontWeight: FontWeight.bold,
@@ -1226,7 +1932,7 @@ class _TopNChip extends StatelessWidget {
                 (option) => ListTile(
                   dense: true,
                   title: Text(
-                    'Top $option',
+                    StorePolicy.isPersonalMode ? '샘플 $option' : 'Top $option',
                     style: TextStyle(
                       color: option == current
                           ? const Color(0xFF10B981)
@@ -1258,7 +1964,7 @@ class _TopNChip extends StatelessWidget {
           mainAxisSize: MainAxisSize.min,
           children: [
             Text(
-              'Top $current',
+              StorePolicy.isPersonalMode ? '샘플 $current' : 'Top $current',
               style: const TextStyle(color: Colors.white70, fontSize: 11),
             ),
             const Icon(
