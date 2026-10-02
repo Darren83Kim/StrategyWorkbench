@@ -16,7 +16,7 @@ void main() {
     final today = DateFormat('yyyy-MM-dd').format(DateTime.now());
 
     SharedPreferences.setMockInitialValues({
-      'snap_v1_배당주': jsonEncode({
+      'snap_v2_배당주': jsonEncode({
         'date': today,
         'current': <Map<String, dynamic>>[],
         'previous': [
@@ -68,7 +68,7 @@ void main() {
 
     final prefs = await SharedPreferences.getInstance();
     final cached =
-        jsonDecode(prefs.getString('snap_v1_배당주')!) as Map<String, dynamic>;
+        jsonDecode(prefs.getString('snap_v2_배당주')!) as Map<String, dynamic>;
     final current = cached['current'] as List<dynamic>;
     expect(current, isNotEmpty);
     expect((current.first as Map<String, dynamic>)['ticker'], 'AAPL');

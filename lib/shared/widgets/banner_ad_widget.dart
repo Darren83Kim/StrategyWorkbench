@@ -15,8 +15,13 @@ class BannerAdWidget extends StatefulWidget {
 }
 
 class _BannerAdWidgetState extends State<BannerAdWidget> {
+  static const int _maxLoadAttempts = 3;
+
   BannerAd? _bannerAd;
+  Timer? _startupTimer;
+  Timer? _retryTimer;
   bool _isLoaded = false;
+  int _loadAttempt = 0;
 
   @override
   void initState() {
@@ -26,23 +31,23 @@ class _BannerAdWidgetState extends State<BannerAdWidget> {
     }
 
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      unawaited(_loadBannerAfterStartup());
+      if (!mounted) {
+        return;
+      }
+      const delay =
+          kDebugMode ? Duration(seconds: 4) : Duration(milliseconds: 900);
+      _startupTimer = Timer(delay, () {
+        if (mounted) {
+          unawaited(_loadBanner());
+        }
+      });
     });
   }
 
-  Future<void> _loadBannerAfterStartup() async {
-    const delay =
-        kDebugMode ? Duration(seconds: 4) : Duration(milliseconds: 900);
-    await Future<void>.delayed(delay);
-
-    if (!mounted) {
-      return;
-    }
-
-    await _loadBanner();
-  }
-
   Future<void> _loadBanner() async {
+    _retryTimer?.cancel();
+    _loadAttempt += 1;
+
     final adService = AdService();
     await adService.init();
 
@@ -68,6 +73,7 @@ class _BannerAdWidgetState extends State<BannerAdWidget> {
           setState(() {
             _bannerAd = ad as BannerAd;
             _isLoaded = true;
+            _loadAttempt = 0;
           });
         },
         onAdFailedToLoad: (ad, error) {
@@ -83,6 +89,7 @@ class _BannerAdWidgetState extends State<BannerAdWidget> {
             _bannerAd = null;
             _isLoaded = false;
           });
+          _scheduleRetry();
         },
       ),
     );
@@ -97,11 +104,29 @@ class _BannerAdWidgetState extends State<BannerAdWidget> {
         stackTrace: stackTrace,
       );
       banner.dispose();
+      _scheduleRetry();
     }
+  }
+
+  void _scheduleRetry() {
+    if (_loadAttempt >= _maxLoadAttempts) {
+      return;
+    }
+
+    final retrySeconds = _loadAttempt == 1 ? 15 : 45;
+    _retryTimer?.cancel();
+    _retryTimer = Timer(Duration(seconds: retrySeconds), () {
+      if (!mounted) {
+        return;
+      }
+      unawaited(_loadBanner());
+    });
   }
 
   @override
   void dispose() {
+    _startupTimer?.cancel();
+    _retryTimer?.cancel();
     _bannerAd?.dispose();
     super.dispose();
   }

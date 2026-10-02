@@ -112,6 +112,14 @@ class KrxDartStockRepository {
         roe: roe,
         dividendYield: dividendYield,
         lastUpdated: DateTime.now(),
+        priceSource: 'KRX',
+        metricSources: {
+          if (per > 0) 'per': 'DART',
+          if (roe > 0) 'roe': 'DART',
+          if (dividendYield > 0) 'dividend': 'DART',
+        },
+        metricsUpdatedAt:
+            per > 0 || roe > 0 || dividendYield > 0 ? DateTime.now() : null,
       );
 
       developer.log(

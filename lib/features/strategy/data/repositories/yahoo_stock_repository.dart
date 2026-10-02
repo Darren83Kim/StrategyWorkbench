@@ -95,6 +95,14 @@ class YahooStockRepository {
         roe: roe > 0 ? roe * 100 : 0.0, // ROE는 0~100 범위로 정규화
         dividendYield: dividendYield > 0 ? dividendYield * 100 : 0.0,
         lastUpdated: DateTime.now(),
+        priceSource: 'Yahoo Finance',
+        metricSources: {
+          if (per > 0) 'per': 'Yahoo Finance',
+          if (roe > 0) 'roe': 'Yahoo Finance',
+          if (dividendYield > 0) 'dividend': 'Yahoo Finance',
+        },
+        metricsUpdatedAt:
+            per > 0 || roe > 0 || dividendYield > 0 ? DateTime.now() : null,
       );
 
       developer.log('Fetched stock: $ticker, PER: $per, ROE: $roe',

@@ -1,4 +1,5 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:strategy_workbench/core/config/store_policy.dart';
 import 'package:strategy_workbench/core/providers/filter_providers.dart';
 import 'package:strategy_workbench/core/providers/portfolio_providers.dart';
 import 'package:strategy_workbench/core/providers/snapshot_providers.dart';
@@ -56,7 +57,9 @@ class DailyBrief {
 
 final dailyBriefProvider = FutureProvider<DailyBrief?>((ref) async {
   final strategy = ref.watch(activeStrategyProvider);
-  final portfolio = ref.watch(portfolioProvider);
+  final portfolio = StorePolicy.showPortfolioFeatures
+      ? ref.watch(portfolioProvider)
+      : const <PortfolioItem>[];
 
   if (strategy == null) {
     return null;
@@ -94,21 +97,24 @@ DailyBrief buildDailyBrief({
           (stock) => !currentByTicker.containsKey(stock.ticker.toUpperCase()))
       .toList();
 
-  final riskHoldings = portfolio
-      .where((item) => !currentByTicker.containsKey(item.ticker.toUpperCase()))
-      .map(
-        (item) => DailyBriefRiskHolding(
-          item: item,
-          previousRank: previousByTicker[item.ticker.toUpperCase()]?.rank,
-        ),
-      )
-      .toList()
-    ..sort((a, b) {
-      if (a.recentlyExited != b.recentlyExited) {
-        return a.recentlyExited ? -1 : 1;
-      }
-      return a.item.ticker.compareTo(b.item.ticker);
-    });
+  final riskHoldings = StorePolicy.showPortfolioFeatures
+      ? (portfolio
+          .where(
+              (item) => !currentByTicker.containsKey(item.ticker.toUpperCase()))
+          .map(
+            (item) => DailyBriefRiskHolding(
+              item: item,
+              previousRank: previousByTicker[item.ticker.toUpperCase()]?.rank,
+            ),
+          )
+          .toList()
+        ..sort((a, b) {
+          if (a.recentlyExited != b.recentlyExited) {
+            return a.recentlyExited ? -1 : 1;
+          }
+          return a.item.ticker.compareTo(b.item.ticker);
+        }))
+      : <DailyBriefRiskHolding>[];
 
   final movers = snapshot.current
       .map((stock) {

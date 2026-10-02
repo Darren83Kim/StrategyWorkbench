@@ -41,6 +41,13 @@ void main() {
           roe: 31.4,
           dividendYield: 0.6,
           lastUpdated: DateTime(2026, 4, 17),
+          priceSource: 'Nasdaq',
+          metricSources: const {
+            'per': 'Finnhub',
+            'roe': 'Finnhub',
+            'dividend': '샘플 데이터',
+          },
+          metricsUpdatedAt: DateTime(2026, 4, 17),
         ),
         normalizedMetrics: const {
           'per': 0.7,
@@ -53,7 +60,7 @@ void main() {
       );
       const insight = StockInsightViewModel(
         strategyName: '가치주',
-        headline: '가치주 기준 상위 추천 종목입니다.',
+        headline: '가치주 기준 상위 지표 샘플입니다.',
         summary: '현재 가치주 Top 10 안에서 #2 입니다. 전일 대비 1계단 상승 했습니다.',
         drivers: [
           StockInsightDriver(
@@ -99,8 +106,14 @@ void main() {
       expect(find.text('Apple'), findsOneWidget);
       expect(find.text('#저평가'), findsOneWidget);
       expect(find.text('#우량주'), findsOneWidget);
+      expect(find.text('데이터 확인 정보'), findsOneWidget);
+      expect(find.text('샘플 포함'), findsOneWidget);
+      expect(find.text('PER · Finnhub'), findsOneWidget);
+      expect(find.text('배당 · 샘플 데이터'), findsOneWidget);
+      expect(find.textContaining('투자 자문이나 특정 종목의 매수·매도 권유가 아닙니다.'),
+          findsOneWidget);
       expect(find.text(AppStrings.ko.whyThisStockTitle), findsOneWidget);
-      expect(find.text('가치주 기준 상위 추천 종목입니다.'), findsOneWidget);
+      expect(find.text('가치주 기준 상위 지표 샘플입니다.'), findsOneWidget);
       expect(find.text(AppStrings.ko.whyThisStockDriversTitle), findsOneWidget);
       expect(find.text(AppStrings.ko.transactions), findsOneWidget);
       expect(find.text('2 @ \$180.00'), findsOneWidget);
@@ -137,6 +150,13 @@ void main() {
           stringsProvider.overrideWith((ref) => AppStrings.ko),
           transactionHistoryProvider
               .overrideWith(() => _FakeTransactionHistoryNotifier()),
+          portfolioWithLivePricesProvider
+              .overrideWith((ref) async => ref.watch(portfolioProvider)),
+          livePortfolioSummaryProvider.overrideWith(
+            (ref) async => calculatePortfolioSummary(
+              ref.watch(portfolioProvider),
+            ),
+          ),
         ],
       );
       container.read(portfolioProvider.notifier).buy('AAPL', 'Apple', 3, 150.0);

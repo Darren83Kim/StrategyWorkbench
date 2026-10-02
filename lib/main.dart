@@ -8,6 +8,7 @@ import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import 'package:strategy_workbench/core/config/store_policy.dart';
 import 'package:strategy_workbench/core/network/hive_service.dart';
 import 'package:strategy_workbench/core/providers/filter_providers.dart';
 import 'package:strategy_workbench/core/services/alert_runtime_service.dart';
@@ -66,8 +67,10 @@ Future<void> main() async {
   developer.log('runApp() called', name: 'main');
   runApp(const ProviderScope(child: MyApp()));
 
-  // 활성 전략이 없으면 남아 있는 백그라운드 알림 작업부터 빠르게 정리한다.
-  unawaited(_cancelAlertTasksIfIdle());
+  // 개인 출시 모드는 포트폴리오 기반 알림/백그라운드 작업을 사용하지 않는다.
+  if (StorePolicy.enablePortfolioAlerts) {
+    unawaited(_cancelAlertTasksIfIdle());
+  }
 
   // 4. 무거운 초기화는 첫 프레임 이후로 늦춰 초기 반응성을 확보한다.
   WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -109,6 +112,14 @@ Future<void> _deferServiceInit(HiveService hiveService) async {
 
 /// 활성 전략이 있을 때만 알림/백그라운드 런타임을 올린다.
 Future<void> _initAlertRuntimeIfNeeded() async {
+  if (!StorePolicy.enablePortfolioAlerts) {
+    developer.log(
+      'Alert runtime skipped in personal store mode',
+      name: 'main',
+    );
+    return;
+  }
+
   try {
     final prefs = await SharedPreferences.getInstance();
     final activeStrategyName = prefs.getString(activeStrategyNameStorageKey);

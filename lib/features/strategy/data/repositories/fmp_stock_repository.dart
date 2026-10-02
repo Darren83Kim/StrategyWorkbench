@@ -71,6 +71,7 @@ class FmpStockRepository {
         roe: 0.0,
         dividendYield: 0.0,
         lastUpdated: DateTime.now(),
+        priceSource: 'FMP',
       );
 
       developer.log(

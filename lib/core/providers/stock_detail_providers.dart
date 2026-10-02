@@ -1,5 +1,6 @@
 import 'dart:developer' as developer;
 
+import 'package:strategy_workbench/core/config/store_policy.dart';
 import 'package:strategy_workbench/core/market/market_classification.dart';
 import 'package:strategy_workbench/core/providers/filter_providers.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -50,6 +51,8 @@ class StockInsightViewModel {
   final String strategyName;
   final String headline;
   final String summary;
+  final String comparisonNote;
+  final String watchPoint;
   final List<StockInsightDriver> drivers;
   final int? rank;
   final int? rankChange;
@@ -58,6 +61,8 @@ class StockInsightViewModel {
     required this.strategyName,
     required this.headline,
     required this.summary,
+    this.comparisonNote = '',
+    this.watchPoint = '',
     required this.drivers,
     this.rank,
     this.rankChange,
@@ -156,8 +161,10 @@ final stockDetailProvider =
     final normalizedSymbol = normalizeTickerInput(symbol);
     const metrics = ['per', 'roe', 'dividendYield'];
     final repository = ref.read(hybridRepositoryProvider);
-    final portfolioFallback = _stockFromPortfolioHolding(
-        ref.watch(portfolioProvider), normalizedSymbol);
+    final portfolioFallback = StorePolicy.showPortfolioFeatures
+        ? _stockFromPortfolioHolding(
+            ref.watch(portfolioProvider), normalizedSymbol)
+        : null;
 
     List<Stock> allStocks = const [];
     try {
@@ -474,6 +481,15 @@ StockInsightViewModel buildStockInsight({
     strategyName: strategy.name,
     headline: headline,
     summary: summary,
+    comparisonNote: _buildComparisonNote(
+      strategyName: strategy.name,
+      drivers: drivers,
+    ),
+    watchPoint: _buildWatchPoint(
+      strategy: strategy,
+      stock: stock,
+      drivers: drivers,
+    ),
     drivers: drivers.take(3).toList(),
     rank: rank,
     rankChange: rankChange,
@@ -487,15 +503,15 @@ String _buildInsightHeadline({
   required StockInsightDriver? primaryDriver,
 }) {
   if (rank != null && rank <= 3) {
-    return '$strategyName 기준 상위 추천 종목입니다.';
+    return '$strategyName 기준 상위 지표 샘플입니다.';
   }
   if (rankChange != null && rankChange > 0) {
-    return '전일 대비 순위가 올라온 종목입니다.';
+    return '지표 순위가 상승한 샘플입니다.';
   }
   if (primaryDriver != null) {
-    return '${primaryDriver.label} 비중이 높은 전략과 잘 맞는 종목입니다.';
+    return '${primaryDriver.label} 비중 기준에서 설명력이 큰 종목입니다.';
   }
-  return '활성 전략 기준으로 다시 볼 만한 종목입니다.';
+  return '선택한 지표 기준으로 다시 살펴볼 샘플입니다.';
 }
 
 String _buildInsightSummary({
@@ -521,7 +537,7 @@ String _buildInsightSummary({
   }
 
   if (parts.isEmpty) {
-    return '활성 전략 가중치 기준으로 주요 지표를 다시 해석하는 중입니다.';
+    return '선택한 지표 가중치 기준으로 주요 지표를 다시 해석하는 중입니다.';
   }
 
   return parts.join(' ');
@@ -566,4 +582,60 @@ String _buildMetricSummary({
     default:
       return '전략 가중치 기준으로 의미 있는 지표입니다.';
   }
+}
+
+String _buildComparisonNote({
+  required String strategyName,
+  required List<StockInsightDriver> drivers,
+}) {
+  if (drivers.isEmpty) {
+    return '현재 확보된 지표가 부족해 $strategyName 기준의 상대 위치를 제한적으로만 해석할 수 있습니다.';
+  }
+
+  final primary = drivers.first;
+  final secondary = drivers.length > 1 ? drivers[1] : null;
+  final primaryScore = (primary.normalizedValue * 100).clamp(0, 100).round();
+
+  if (secondary == null) {
+    return '$strategyName 기준에서는 ${primary.label} 축의 상대 위치가 주로 설명력을 만듭니다. 비교군 백분위는 약 $primaryScore점입니다.';
+  }
+
+  final secondaryScore =
+      (secondary.normalizedValue * 100).clamp(0, 100).round();
+  return '$strategyName 기준에서는 ${primary.label} 축이 가장 크게 작동하고, ${secondary.label} 축은 약 $secondaryScore점 수준으로 보조 설명력을 더합니다.';
+}
+
+String _buildWatchPoint({
+  required SavedFilter strategy,
+  required Stock stock,
+  required List<StockInsightDriver> drivers,
+}) {
+  final missingMetrics = <String>[
+    if ((strategy.weights['per'] ?? 0) > 0 && stock.per <= 0) 'PER',
+    if ((strategy.weights['roe'] ?? 0) > 0 && stock.roe <= 0) 'ROE',
+    if ((strategy.weights['dividend'] ?? 0) > 0 && stock.dividendYield <= 0)
+      '배당',
+  ];
+
+  if (missingMetrics.isNotEmpty) {
+    return '${missingMetrics.join(', ')} 데이터가 비어 있어 해당 축의 비교는 보수적으로 봐야 합니다.';
+  }
+
+  if (drivers.isEmpty) {
+    return '지표 데이터가 더 쌓이면 기준별 강점과 약점을 더 선명하게 비교할 수 있습니다.';
+  }
+
+  final weakest = [...drivers]..sort((a, b) {
+      final contributionA = a.weight * a.normalizedValue;
+      final contributionB = b.weight * b.normalizedValue;
+      return contributionA.compareTo(contributionB);
+    });
+  final candidate = weakest.first;
+  final score = (candidate.normalizedValue * 100).clamp(0, 100).round();
+
+  if (candidate.normalizedValue < 0.35) {
+    return '${candidate.label} 축은 비교군 대비 약 $score점으로 낮게 나타나 추가 확인이 필요합니다.';
+  }
+
+  return '큰 약점이 두드러지기보다는 ${drivers.first.label} 축의 설명력이 더 큰 샘플입니다.';
 }

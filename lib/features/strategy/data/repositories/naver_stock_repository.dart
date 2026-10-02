@@ -72,6 +72,7 @@ class NaverStockRepository {
         roe: 0,
         dividendYield: 0,
         lastUpdated: DateTime.now(),
+        priceSource: 'Naver Finance',
       );
     } on ApiException catch (error) {
       developer.log(

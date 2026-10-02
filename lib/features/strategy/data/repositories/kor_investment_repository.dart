@@ -223,6 +223,15 @@ class KorInvestmentRepository {
         roe: estimatedRoe,
         dividendYield: dividendYield,
         lastUpdated: DateTime.now(),
+        priceSource: '한국투자증권',
+        metricSources: {
+          if (per > 0) 'per': '한국투자증권',
+          if (estimatedRoe > 0) 'roe': '한국투자증권 추정',
+          if (dividendYield > 0) 'dividend': '한국투자증권',
+        },
+        metricsUpdatedAt: per > 0 || estimatedRoe > 0 || dividendYield > 0
+            ? DateTime.now()
+            : null,
       );
 
       developer.log('Fetched Korean stock: $code, Price: $price, PER: $per',

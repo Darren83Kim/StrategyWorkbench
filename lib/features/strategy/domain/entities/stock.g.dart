@@ -24,13 +24,18 @@ class StockAdapter extends TypeAdapter<Stock> {
       roe: fields[4] as double,
       dividendYield: fields[5] as double,
       lastUpdated: fields[6] as DateTime,
+      priceSource: fields[7] as String? ?? '출처 미확인',
+      metricSources: fields[8] == null
+          ? const {}
+          : Map<String, String>.from(fields[8] as Map),
+      metricsUpdatedAt: fields[9] as DateTime?,
     );
   }
 
   @override
   void write(BinaryWriter writer, Stock obj) {
     writer
-      ..writeByte(7)
+      ..writeByte(10)
       ..writeByte(0)
       ..write(obj.ticker)
       ..writeByte(1)
@@ -44,7 +49,13 @@ class StockAdapter extends TypeAdapter<Stock> {
       ..writeByte(5)
       ..write(obj.dividendYield)
       ..writeByte(6)
-      ..write(obj.lastUpdated);
+      ..write(obj.lastUpdated)
+      ..writeByte(7)
+      ..write(obj.priceSource)
+      ..writeByte(8)
+      ..write(obj.metricSources)
+      ..writeByte(9)
+      ..write(obj.metricsUpdatedAt);
   }
 
   @override

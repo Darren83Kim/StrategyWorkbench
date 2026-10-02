@@ -33,4 +33,37 @@ void main() {
       expect(enabled, isTrue);
     });
   });
+
+  group('ApiKeys AdMob runtime policy', () {
+    test('uses Google sample ids only when test ids are enabled', () {
+      final resolved = ApiKeys.resolveAdmobId(
+        useTestIds: true,
+        testId: ApiKeys.admobAndroidTestBannerId,
+        productionId: 'ca-app-pub-1234567890123456/1234567890',
+      );
+
+      expect(resolved, ApiKeys.admobAndroidTestBannerId);
+    });
+
+    test('keeps a missing production id empty', () {
+      final resolved = ApiKeys.resolveAdmobId(
+        useTestIds: false,
+        testId: ApiKeys.admobAndroidTestBannerId,
+        productionId: '',
+      );
+
+      expect(resolved, isEmpty);
+    });
+
+    test('uses the configured production id in a release runtime', () {
+      const productionId = 'ca-app-pub-1234567890123456/1234567890';
+      final resolved = ApiKeys.resolveAdmobId(
+        useTestIds: false,
+        testId: ApiKeys.admobAndroidTestBannerId,
+        productionId: productionId,
+      );
+
+      expect(resolved, productionId);
+    });
+  });
 }

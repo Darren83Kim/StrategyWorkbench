@@ -9,6 +9,7 @@ import 'package:workmanager/workmanager.dart';
 
 import '../../features/market/models/stock.dart' as market;
 import '../../features/strategy/domain/entities/stock.dart' as strategy;
+import '../config/store_policy.dart';
 import '../providers/filter_providers.dart';
 import '../scoring/scoring_engine.dart';
 import 'notification_service.dart';
@@ -24,6 +25,14 @@ void callbackDispatcher() {
   Workmanager().executeTask((task, inputData) async {
     if (task != backgroundTask) {
       return false;
+    }
+
+    if (StorePolicy.isPersonalMode) {
+      developer.log(
+        'Background strategy check skipped in personal store mode',
+        name: 'BackgroundService',
+      );
+      return true;
     }
 
     developer.log(

@@ -329,9 +329,11 @@ void main() {
       expect(insight.rank, 2);
       expect(insight.rankChange, 2);
       expect(insight.drivers.first.metricKey, 'per');
-      expect(insight.headline, contains('상위 추천 종목'));
+      expect(insight.headline, contains('상위 지표 샘플'));
       expect(insight.summary, contains('Top 10'));
       expect(insight.summary, contains('2계단 상승'));
+      expect(insight.comparisonNote, contains('가치주'));
+      expect(insight.watchPoint, isNotEmpty);
       expect(insight.compactSummary, contains('#2'));
       expect(insight.compactSummary, contains('↑2'));
     });

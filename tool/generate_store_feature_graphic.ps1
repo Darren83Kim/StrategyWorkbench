@@ -67,13 +67,13 @@ $footerFont = New-Object System.Drawing.Font 'Malgun Gothic', 15, ([System.Drawi
 Add-RoundRect $graphics 48 68 540 330 34 $cardFill $cardStroke
 Add-Text $graphics 'Strategy' $titleFont $white 94 104
 Add-Text $graphics 'Workbench' $titleFont $mint 94 164
-Add-Text $graphics '전략과 포트폴리오를 한눈에' $subFont $muted 98 254
+Add-Text $graphics '시장 지표를 비교하고 학습하세요' $subFont $muted 98 254
 
 Add-RoundRect $graphics 96 318 152 44 22 $chipFill $chipStroke
 Add-RoundRect $graphics 266 318 178 44 22 $chipFill $chipStroke
 Add-RoundRect $graphics 462 318 92 44 22 $chipFill $chipStroke
-Add-Text $graphics '전략 스코어' $chipFont $mint 121 326
-Add-Text $graphics '리밸런싱 코치' $chipFont $mint 289 326
+Add-Text $graphics '지표 점수' $chipFont $mint 126 326
+Add-Text $graphics '샘플 랭킹' $chipFont $mint 303 326
 Add-Text $graphics 'KR/US' $chipFont $mint 480 326
 
 Add-RoundRect $graphics 638 80 310 130 28 $cardFill $cardStroke
@@ -90,16 +90,16 @@ $points = @(
     (New-Object System.Drawing.Point 892, 118)
 )
 $graphics.DrawLines($chartPen, $points)
-Add-Text $graphics '+ 전략 신호' $rightTitleFont $white 674 102
-Add-Text $graphics '오늘의 Top Picks' $smallFont $muted 674 170
+Add-Text $graphics '+ 지표 흐름' $rightTitleFont $white 674 102
+Add-Text $graphics '오늘의 샘플 랭킹' $smallFont $muted 674 170
 
-Add-Text $graphics '포트폴리오' $rightTitleFont $white 676 252
-Add-Text $graphics '리스크 보유' $smallFont $muted 676 296
+Add-Text $graphics '분석 기준' $rightTitleFont $white 676 252
+Add-Text $graphics 'PER 비교' $smallFont $muted 676 296
 Add-RoundRect $graphics 870 294 36 28 14 $chipFill $chipStroke
-Add-Text $graphics '2' $smallFont $mint 883 296
-Add-Text $graphics '신규 편입' $smallFont $muted 676 330
+Add-Text $graphics '34' $smallFont $mint 877 296
+Add-Text $graphics 'ROE 비교' $smallFont $muted 676 330
 Add-RoundRect $graphics 870 328 36 28 14 $chipFill $chipStroke
-Add-Text $graphics '3' $smallFont $mint 883 330
+Add-Text $graphics '33' $smallFont $mint 877 330
 
 Add-RoundRect $graphics 676 368 48 10 5 $mint $null
 Add-RoundRect $graphics 736 368 86 10 5 $blue $null
@@ -107,7 +107,7 @@ Add-RoundRect $graphics 834 368 76 10 5 $mint $null
 
 $strip = New-Brush 170 7 19 39
 $graphics.FillRectangle($strip, 0, 438, $width, 62)
-Add-Text $graphics '투자 판단을 돕는 전략 워크벤치 · 매매 권유가 아닌 정보 제공 앱' $footerFont $muted 104 458
+Add-Text $graphics 'PER · ROE · 배당 지표를 한눈에 비교하는 정보 제공 앱' $footerFont $muted 104 458
 
 $out = Join-Path $storeDir 'feature_graphic_1024x500.png'
 $bitmap.Save($out, [System.Drawing.Imaging.ImageFormat]::Png)
