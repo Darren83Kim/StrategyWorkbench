@@ -7,6 +7,7 @@ import 'package:google_mobile_ads/google_mobile_ads.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../constants/api_keys.dart';
+import 'crash_reporting.dart';
 
 const lastInterstitialStorageKey = 'last_interstitial_ms';
 
@@ -312,8 +313,17 @@ class AdService {
         interstitial.show();
       } catch (error, stackTrace) {
         timeoutTimer.cancel();
+        final code = error is LoadAdError ? error.code : null;
+        final domain = error is LoadAdError ? error.domain : null;
+        final message = error is LoadAdError ? error.message : error.toString();
+        CrashReporting.logAdLoadFailure(
+          format: 'interstitial',
+          code: code,
+          domain: domain,
+          message: message,
+        );
         developer.log(
-          'Interstitial load failed: $error',
+          'Interstitial load failed: $message',
           name: 'AdService',
           error: error,
           stackTrace: stackTrace,

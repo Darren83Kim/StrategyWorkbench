@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:strategy_workbench/core/config/store_policy.dart';
+import 'package:strategy_workbench/core/metrics/sample_metric_policy.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:strategy_workbench/core/market/market_classification.dart';
 import 'package:strategy_workbench/core/providers/filter_providers.dart';
@@ -1738,7 +1739,9 @@ class _StrategyCard extends ConsumerWidget {
                       padding: EdgeInsets.all(24),
                       child: Center(
                         child: Text(
-                          '선택한 시장의 종목 데이터 없음',
+                          SampleMetricPolicy.rejectSampleMetrics
+                              ? missingMetricLabel
+                              : '선택한 시장의 종목 데이터 없음',
                           style: TextStyle(color: Colors.white54),
                         ),
                       ),

@@ -4,6 +4,7 @@ import 'package:strategy_workbench/core/market/market_classification.dart';
 import 'package:strategy_workbench/core/providers/filter_providers.dart';
 import 'package:strategy_workbench/core/providers/snapshot_providers.dart';
 import 'package:strategy_workbench/core/providers/stock_providers.dart';
+import 'package:strategy_workbench/core/metrics/sample_metric_policy.dart';
 import 'package:strategy_workbench/core/scoring/scoring_engine.dart';
 import 'package:strategy_workbench/features/market/models/stock.dart'
     as market_stock;
@@ -199,11 +200,19 @@ AnalysisSimulationResult buildAnalysisSimulation({
   required Map<String, double> simulatedWeights,
   int sampleCount = 10,
 }) {
+  final normalizedSimulation = normalizeAnalysisWeights(simulatedWeights);
+  final mergedWeights = <String, double>{
+    for (final entry in strategy.weights.entries) entry.key: entry.value,
+    for (final entry in normalizedSimulation.entries)
+      entry.key: entry.value > (strategy.weights[entry.key] ?? 0)
+          ? entry.value
+          : (strategy.weights[entry.key] ?? entry.value),
+  };
   final raw = runAnalysisSimulation(
     _serializeSimulationRequest(
-      stocks: stocks,
+      stocks: SampleMetricPolicy.rankableStocks(stocks, mergedWeights),
       strategy: strategy,
-      simulatedWeights: normalizeAnalysisWeights(simulatedWeights),
+      simulatedWeights: normalizedSimulation,
       sampleCount: sampleCount,
     ),
   );

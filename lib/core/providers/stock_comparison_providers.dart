@@ -2,6 +2,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:strategy_workbench/core/market/market_classification.dart';
 import 'package:strategy_workbench/core/providers/filter_providers.dart';
 import 'package:strategy_workbench/core/providers/snapshot_providers.dart';
+import 'package:strategy_workbench/core/metrics/sample_metric_policy.dart';
 import 'package:strategy_workbench/core/scoring/scoring_engine.dart';
 import 'package:strategy_workbench/features/market/models/stock.dart'
     as market_stock;
@@ -150,7 +151,10 @@ StockComparisonReport? buildStockComparisonReport({
     return null;
   }
 
-  final marketStocks = universe
+  final marketStocks = SampleMetricPolicy.rankableStocks(
+    universe,
+    strategy.weights,
+  )
       .map(
         (stock) => market_stock.Stock(
           symbol: stock.ticker,

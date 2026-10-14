@@ -10,6 +10,7 @@ import 'package:workmanager/workmanager.dart';
 import '../../features/market/models/stock.dart' as market;
 import '../../features/strategy/domain/entities/stock.dart' as strategy;
 import '../config/store_policy.dart';
+import '../metrics/sample_metric_policy.dart';
 import '../providers/filter_providers.dart';
 import '../scoring/scoring_engine.dart';
 import 'notification_service.dart';
@@ -53,25 +54,14 @@ void callbackDispatcher() {
       stockCache = await Hive.openBox('stock_cache');
       settings = await Hive.openBox('settings');
 
-      final allMarketStocks = <market.Stock>[];
+      final cachedStrategyStocks = <strategy.Stock>[];
       for (final key in stockCache.keys) {
         final cached = stockCache.get(key);
         if (cached is strategy.Stock) {
-          allMarketStocks.add(
-            market.Stock(
-              symbol: cached.ticker,
-              name: cached.name,
-              price: cached.price,
-              change: 0,
-              per: cached.per,
-              roe: cached.roe,
-              dividendYield: cached.dividendYield,
-            ),
-          );
+          cachedStrategyStocks.add(cached);
         }
       }
-
-      if (allMarketStocks.isEmpty) {
+      if (cachedStrategyStocks.isEmpty) {
         developer.log(
           'No cached stocks found, skipping background check',
           name: 'BackgroundService',
@@ -114,6 +104,22 @@ void callbackDispatcher() {
       );
 
       final engine = ScoringEngine();
+      final allMarketStocks = SampleMetricPolicy.rankableStocks(
+        cachedStrategyStocks,
+        activeStrategy.weights,
+      )
+          .map(
+            (cached) => market.Stock(
+              symbol: cached.ticker,
+              name: cached.name,
+              price: cached.price,
+              change: 0,
+              per: cached.per,
+              roe: cached.roe,
+              dividendYield: cached.dividendYield,
+            ),
+          )
+          .toList();
       final scoredStocks = engine.calculateScores(
         stocks: allMarketStocks,
         weights: activeStrategy.weights,

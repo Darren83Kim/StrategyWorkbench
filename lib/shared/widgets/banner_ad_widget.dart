@@ -6,6 +6,7 @@ import 'package:flutter/material.dart';
 import 'package:google_mobile_ads/google_mobile_ads.dart';
 
 import '../../core/services/ad_service.dart';
+import '../../core/services/crash_reporting.dart';
 
 class BannerAdWidget extends StatefulWidget {
   const BannerAdWidget({super.key});
@@ -51,12 +52,24 @@ class _BannerAdWidgetState extends State<BannerAdWidget> {
     final adService = AdService();
     await adService.init();
 
-    if (!mounted || !adService.isInitialized) {
+    if (!mounted) {
+      return;
+    }
+    if (!adService.isInitialized) {
+      CrashReporting.logAdLoadFailure(
+        format: 'banner',
+        message: 'Mobile Ads SDK init failed',
+      );
+      _scheduleRetry();
       return;
     }
 
     final adUnitId = adService.bannerAdUnitId;
     if (adUnitId == null || adUnitId.isEmpty) {
+      CrashReporting.logAdLoadFailure(
+        format: 'banner',
+        message: 'banner ad unit id is empty',
+      );
       return;
     }
 
@@ -77,9 +90,11 @@ class _BannerAdWidgetState extends State<BannerAdWidget> {
           });
         },
         onAdFailedToLoad: (ad, error) {
-          developer.log(
-            'Banner ad failed to load: $error',
-            name: 'BannerAdWidget',
+          CrashReporting.logAdLoadFailure(
+            format: 'banner',
+            code: error.code,
+            domain: error.domain,
+            message: error.message,
           );
           ad.dispose();
           if (!mounted) {

@@ -283,4 +283,37 @@ void main() {
     expect(stocks.length, 1);
     expect(stocks.first.name, 'Mock 삼성전자');
   });
+
+  test('release mode does not rank on mock fundamentals', () async {
+    final repository = HybridStockRepository(
+      yahooRepository: _FakeYahooStockRepository({}),
+      nasdaqRepository: _FakeNasdaqStockRepository({
+        'NVDA': stock(
+          ticker: 'NVDA',
+          name: 'NVIDIA Corp.',
+          price: 192.53,
+        ),
+      }),
+      mockRepository: _FakeMockStockRepository([
+        stock(
+          ticker: 'NVDA',
+          name: 'NVIDIA Corp.',
+          price: 875.4,
+          per: 30,
+          roe: 90,
+          dividendYield: 1,
+        ),
+      ]),
+      allowSampleMetricFill: false,
+    );
+
+    final stocks = await repository.getUsStocks();
+    final nvidia = stocks.firstWhere((stock) => stock.ticker == 'NVDA');
+
+    expect(nvidia.price, 192.53);
+    expect(nvidia.per, 0);
+    expect(nvidia.roe, 0);
+    expect(nvidia.dividendYield, 0);
+    expect(nvidia.usesSampleMetrics, isFalse);
+  });
 }

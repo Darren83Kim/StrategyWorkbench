@@ -1,3 +1,16 @@
+# The only supported Google Play release path.
+# Debug builds may use Google sample AdMob IDs. Release builds fail in Gradle
+# unless this script injects production App ID, banner ID, and interstitial ID
+# from the local .env via --dart-define. Do not commit .env.
+#
+#   powershell -File tool/build_play_release.ps1
+#   powershell -File tool/build_play_release.ps1 -BuildApk
+#   powershell -File tool/build_play_release.ps1 -ValidateOnly
+#
+# Optional crash reporting (no secrets in git):
+#   1. Download google-services.json into android/app/ and leave it untracked.
+#   2. Add --dart-define=ENABLE_CRASHLYTICS=true to the flutter arguments below.
+
 param(
     [switch]$BuildApk,
     [switch]$ValidateOnly

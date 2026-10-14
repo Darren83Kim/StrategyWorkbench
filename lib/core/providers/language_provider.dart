@@ -1,14 +1,33 @@
+import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../l10n/app_strings.dart';
 
 const _langKey = 'app_language';
 
+/// Saved choice wins. Otherwise Korean devices start in Korean.
+String resolveLanguageCode({
+  String? saved,
+  required String deviceLanguageCode,
+}) {
+  if (saved == 'ko' || saved == 'en') {
+    return saved!;
+  }
+  return deviceLanguageCode.toLowerCase().startsWith('ko') ? 'ko' : 'en';
+}
+
+String deviceLanguageCode() {
+  return WidgetsBinding.instance.platformDispatcher.locale.languageCode;
+}
+
 class LanguageNotifier extends AsyncNotifier<String> {
   @override
   Future<String> build() async {
     final prefs = await SharedPreferences.getInstance();
-    return prefs.getString(_langKey) ?? 'en';
+    return resolveLanguageCode(
+      saved: prefs.getString(_langKey),
+      deviceLanguageCode: deviceLanguageCode(),
+    );
   }
 
   Future<void> toggle() async {
@@ -25,6 +44,9 @@ final languageProvider =
 
 /// 현재 언어의 문자열 맵 (동기 접근 편의 provider)
 final stringsProvider = Provider<AppStrings>((ref) {
-  final lang = ref.watch(languageProvider).value ?? 'en';
+  final lang = ref.watch(languageProvider).value ??
+      resolveLanguageCode(
+        deviceLanguageCode: deviceLanguageCode(),
+      );
   return lang == 'ko' ? AppStrings.ko : AppStrings.en;
 });

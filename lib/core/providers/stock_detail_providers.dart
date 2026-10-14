@@ -1,6 +1,7 @@
 import 'dart:developer' as developer;
 
 import 'package:strategy_workbench/core/config/store_policy.dart';
+import 'package:strategy_workbench/core/metrics/sample_metric_policy.dart';
 import 'package:strategy_workbench/core/market/market_classification.dart';
 import 'package:strategy_workbench/core/providers/filter_providers.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -405,7 +406,7 @@ StockInsightViewModel buildStockInsight({
 }) {
   final stock = detail.stock;
   final drivers = <StockInsightDriver>[
-    if ((strategy.weights['per'] ?? 0) > 0 && stock.per > 0)
+    if ((strategy.weights['per'] ?? 0) > 0 && _hasUsableMetric(stock, 'per'))
       StockInsightDriver(
         metricKey: 'per',
         label: 'PER',
@@ -418,7 +419,7 @@ StockInsightViewModel buildStockInsight({
           normalizedValue: detail.normalizedMetrics['per'] ?? 0.0,
         ),
       ),
-    if ((strategy.weights['roe'] ?? 0) > 0 && stock.roe > 0)
+    if ((strategy.weights['roe'] ?? 0) > 0 && _hasUsableMetric(stock, 'roe'))
       StockInsightDriver(
         metricKey: 'roe',
         label: 'ROE',
@@ -431,7 +432,8 @@ StockInsightViewModel buildStockInsight({
           normalizedValue: detail.normalizedMetrics['roe'] ?? 0.0,
         ),
       ),
-    if ((strategy.weights['dividend'] ?? 0) > 0 && stock.dividendYield > 0)
+    if ((strategy.weights['dividend'] ?? 0) > 0 &&
+        _hasUsableMetric(stock, 'dividend'))
       StockInsightDriver(
         metricKey: 'dividend',
         label: '배당',
@@ -537,10 +539,30 @@ String _buildInsightSummary({
   }
 
   if (parts.isEmpty) {
+    if (SampleMetricPolicy.rejectSampleMetrics) {
+      return missingMetricLabel;
+    }
     return '선택한 지표 가중치 기준으로 주요 지표를 다시 해석하는 중입니다.';
   }
 
   return parts.join(' ');
+}
+
+bool _hasUsableMetric(Stock stock, String metric) {
+  final value = switch (metric) {
+    'per' => stock.per,
+    'roe' => stock.roe,
+    'dividend' => stock.dividendYield,
+    _ => 0.0,
+  };
+  if (value <= 0) {
+    return false;
+  }
+  if (SampleMetricPolicy.rejectSampleMetrics &&
+      SampleMetricPolicy.isSampleMetric(stock, metric)) {
+    return false;
+  }
+  return true;
 }
 
 String _buildMetricSummary({

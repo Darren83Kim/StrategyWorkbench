@@ -4,6 +4,7 @@ import 'package:intl/intl.dart';
 import 'package:strategy_workbench/core/cache/stock_cache_keys.dart';
 import 'package:strategy_workbench/features/strategy/data/repositories/hybrid_stock_repository.dart';
 import 'package:strategy_workbench/features/strategy/domain/entities/stock.dart';
+import 'package:strategy_workbench/core/metrics/sample_metric_policy.dart';
 import 'package:strategy_workbench/core/scoring/scoring_engine.dart';
 import 'package:strategy_workbench/core/extensions/stock_extension.dart';
 import 'dart:developer' as developer;
@@ -106,7 +107,9 @@ final scoredStockListProvider =
   final weights = ref.watch(weightsProvider);
   final engine = ScoringEngine();
 
-  final marketStocks = stocks.map((s) => s.toMarketStock()).toList();
+  final marketStocks = SampleMetricPolicy.rankableStocks(stocks, weights)
+      .map((s) => s.toMarketStock())
+      .toList();
   return engine.calculateScores(stocks: marketStocks, weights: weights);
 });
 

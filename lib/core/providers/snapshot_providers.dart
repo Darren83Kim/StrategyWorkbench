@@ -8,6 +8,7 @@ import 'package:strategy_workbench/core/cache/stock_cache_keys.dart';
 import 'package:strategy_workbench/core/market/market_classification.dart';
 import 'package:strategy_workbench/core/providers/filter_providers.dart';
 import 'package:strategy_workbench/core/providers/stock_providers.dart';
+import 'package:strategy_workbench/core/metrics/sample_metric_policy.dart';
 import 'package:strategy_workbench/core/scoring/scoring_engine.dart';
 import 'package:strategy_workbench/features/strategy/domain/entities/stock.dart';
 import 'package:strategy_workbench/features/market/models/stock.dart'
@@ -105,7 +106,7 @@ String _snapKey(
   String strategyName, [
   MarketFilter marketFilter = MarketFilter.hybrid,
 ]) {
-  final base = 'snap_v2_${strategyName.replaceAll(' ', '_')}';
+  final base = 'snap_v3_${strategyName.replaceAll(' ', '_')}';
   if (marketFilter == MarketFilter.hybrid) {
     return base;
   }
@@ -145,7 +146,7 @@ Future<List<SnapshotStock>> _buildSnapshotStocksInBackground({
   required int topN,
 }) async {
   final payload = _serializeSnapshotRequest(
-    stocks: stocks,
+    stocks: SampleMetricPolicy.rankableStocks(stocks, weights),
     weights: weights,
     topN: topN,
   );
