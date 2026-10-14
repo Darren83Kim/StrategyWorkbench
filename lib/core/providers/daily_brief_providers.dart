@@ -87,7 +87,9 @@ DailyBrief buildDailyBrief({
     for (final stock in snapshot.previous) stock.ticker.toUpperCase(): stock,
   };
 
-  final entered = snapshot.current
+  final rankedCurrent =
+      snapshot.current.where((stock) => stock.ranked).toList();
+  final entered = rankedCurrent
       .where(
           (stock) => !previousByTicker.containsKey(stock.ticker.toUpperCase()))
       .toList();
@@ -116,7 +118,7 @@ DailyBrief buildDailyBrief({
         }))
       : <DailyBriefRiskHolding>[];
 
-  final movers = snapshot.current
+  final movers = rankedCurrent
       .map((stock) {
         final change = snapshot.rankChange(stock.ticker);
         if (change == null || change == 0) {
@@ -140,7 +142,7 @@ DailyBrief buildDailyBrief({
     entered: entered,
     exited: exited,
     riskHoldings: riskHoldings,
-    topPicks: snapshot.current.take(3).toList(),
+    topPicks: rankedCurrent.take(3).toList(),
     movers: movers.take(3).toList(),
   );
 }

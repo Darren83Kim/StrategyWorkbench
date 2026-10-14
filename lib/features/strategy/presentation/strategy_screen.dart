@@ -1739,14 +1739,15 @@ class _StrategyCard extends ConsumerWidget {
                       padding: EdgeInsets.all(24),
                       child: Center(
                         child: Text(
-                          SampleMetricPolicy.rejectSampleMetrics
-                              ? missingMetricLabel
-                              : '선택한 시장의 종목 데이터 없음',
-                          style: TextStyle(color: Colors.white54),
+                          '시세 데이터를 불러오지 못했습니다.\n네트워크를 확인한 뒤 전략을 다시 열어 주세요.',
+                          textAlign: TextAlign.center,
+                          style: TextStyle(color: Colors.white54, height: 1.4),
                         ),
                       ),
                     );
                   }
+                  final unrankedOnly =
+                      snapshot.current.every((stock) => !stock.ranked);
                   final insightMap = insightsAsync?.maybeWhen(
                         data: (value) => value,
                         orElse: () => const <String, StockInsightViewModel>{},
@@ -1754,8 +1755,20 @@ class _StrategyCard extends ConsumerWidget {
                       const <String, StockInsightViewModel>{};
                   final insightsLoading = insightsAsync?.isLoading ?? false;
                   return Column(
-                    children: snapshot.current
-                        .map(
+                    children: [
+                      if (unrankedOnly)
+                        const Padding(
+                          padding: EdgeInsets.fromLTRB(16, 12, 16, 4),
+                          child: Text(
+                            '실지표가 없어 순위를 매기지 않았습니다. 가격만 확인된 종목은 지표 없음으로 표시합니다.',
+                            style: TextStyle(
+                              color: Color(0xFFFDBA74),
+                              fontSize: 12,
+                              height: 1.4,
+                            ),
+                          ),
+                        ),
+                      ...snapshot.current.map(
                           (stock) => _StockRow(
                             stock: stock,
                             isWatched: watchedTickers.contains(stock.ticker),
@@ -1765,8 +1778,8 @@ class _StrategyCard extends ConsumerWidget {
                             insight: insightMap[stock.ticker.toUpperCase()],
                             isInsightLoading: insightsLoading,
                           ),
-                        )
-                        .toList(),
+                        ),
+                    ],
                   );
                 },
               ),
@@ -1827,7 +1840,7 @@ class _StockRow extends StatelessWidget {
               ),
               child: Center(
                 child: Text(
-                  '#${stock.rank}',
+                  stock.ranked ? '#${stock.rank}' : '–',
                   style: const TextStyle(color: Colors.white54, fontSize: 10),
                 ),
               ),
@@ -1853,12 +1866,14 @@ class _StockRow extends StatelessWidget {
                   ),
                   const SizedBox(height: 2),
                   Text(
-                    isInsightLoading
-                        ? StorePolicy.isPersonalMode
-                            ? '지표 설명 생성 중...'
-                            : '전략 기준 설명 생성 중...'
-                        : insight?.compactSummary ??
-                            '점수 ${stock.score.toStringAsFixed(1)} 기준으로 정렬된 종목입니다.',
+                    !stock.ranked
+                        ? missingMetricLabel
+                        : isInsightLoading
+                            ? StorePolicy.isPersonalMode
+                                ? '지표 설명 생성 중...'
+                                : '전략 기준 설명 생성 중...'
+                            : insight?.compactSummary ??
+                                '점수 ${stock.score.toStringAsFixed(1)} 기준으로 정렬된 종목입니다.',
                     style: const TextStyle(color: Colors.white30, fontSize: 10),
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,

@@ -72,6 +72,36 @@ class SampleMetricPolicy {
     return false;
   }
 
+  /// Rank only on real weighted metrics. When none exist, keep priced stocks
+  /// visible so the strategy list is not blank.
+  static ({List<Stock> ranked, List<Stock> unranked}) partitionForDisplay(
+    List<Stock> stocks,
+    Map<String, double> weights, {
+    bool? rejectSampleMetrics,
+  }) {
+    final reject = rejectSampleMetrics ?? SampleMetricPolicy.rejectSampleMetrics;
+    if (!reject) {
+      return (ranked: stocks, unranked: const <Stock>[]);
+    }
+
+    final ranked = rankableStocks(
+      stocks,
+      weights,
+      rejectSampleMetrics: true,
+    );
+    if (ranked.isNotEmpty) {
+      return (ranked: ranked, unranked: const <Stock>[]);
+    }
+
+    return (
+      ranked: const <Stock>[],
+      unranked: [
+        for (final stock in stocks)
+          if (stock.price > 0) withoutSampleMetrics(stock),
+      ],
+    );
+  }
+
   static String fundamentalText({
     required Stock stock,
     required String metric,

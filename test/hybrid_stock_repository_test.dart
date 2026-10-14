@@ -71,6 +71,9 @@ class _FakeNasdaqStockRepository extends NasdaqStockRepository {
   Future<Stock?> getStockByTicker(String ticker) async {
     return stocksByTicker[ticker];
   }
+
+  @override
+  Future<Stock?> getFundamentals(String ticker) async => null;
 }
 
 class _FakeKrxDartStockRepository extends KrxDartStockRepository {

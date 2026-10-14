@@ -117,6 +117,27 @@ void main() {
       expect(ranked.single.roe, 0);
       expect(ranked.single.usesSampleMetrics, isFalse);
     });
+
+    test('keeps priced stocks visible when nothing is rankable', () {
+      final priced = Stock(
+        ticker: '005930',
+        name: '삼성전자',
+        price: 70000,
+        per: 0,
+        roe: 0,
+        dividendYield: 0,
+        lastUpdated: DateTime(2026, 10, 14),
+      );
+
+      final partition = SampleMetricPolicy.partitionForDisplay(
+        [priced],
+        const {'per': 0.7, 'roe': 0.3},
+        rejectSampleMetrics: true,
+      );
+
+      expect(partition.ranked, isEmpty);
+      expect(partition.unranked.single.ticker, '005930');
+    });
   });
 
   group('device language', () {

@@ -1,6 +1,7 @@
 import 'dart:developer' as developer;
 
 import 'package:strategy_workbench/core/network/dio_client.dart';
+import 'package:strategy_workbench/features/strategy/data/repositories/keyless_fundamentals.dart';
 import 'package:strategy_workbench/features/strategy/data/repositories/stock_universe.dart';
 import 'package:strategy_workbench/features/strategy/domain/entities/stock.dart';
 
@@ -11,6 +12,7 @@ import 'package:strategy_workbench/features/strategy/domain/entities/stock.dart'
 class NaverStockRepository {
   static const _baseUrl =
       'https://polling.finance.naver.com/api/realtime/domestic/stock';
+  static const _integrationUrl = 'https://m.stock.naver.com/api/stock';
 
   final DioClient _dioClient;
 
@@ -84,6 +86,68 @@ class NaverStockRepository {
     } catch (error) {
       developer.log(
         'Naver quote fetch failed for $stockCode: $error',
+        name: 'NaverStockRepository',
+        error: error,
+      );
+      return null;
+    }
+  }
+
+  /// PER, ROE, and dividend yield from Naver's public stock pages.
+  /// Price stays 0 so callers can merge this onto an existing quote.
+  Future<Stock?> getFundamentals(String stockCode) async {
+    try {
+      final responses = await Future.wait([
+        _getJson('$_integrationUrl/$stockCode/integration'),
+        _getJson('$_integrationUrl/$stockCode/finance/annual'),
+      ]);
+      final integration = responses[0] is Map
+          ? parseNaverIntegration(Map<dynamic, dynamic>.from(responses[0] as Map))
+          : const KeylessFundamentals();
+      final roe = responses[1] is Map
+          ? parseNaverAnnualRoe(Map<dynamic, dynamic>.from(responses[1] as Map))
+          : null;
+      final fundamentals = KeylessFundamentals(
+        per: integration.per,
+        roe: roe ?? 0,
+        dividendYield: integration.dividendYield,
+      );
+      if (!fundamentals.hasAny) {
+        return null;
+      }
+
+      final now = DateTime.now();
+      return Stock(
+        ticker: stockCode,
+        name: stockCode,
+        price: 0,
+        per: fundamentals.per,
+        roe: fundamentals.roe,
+        dividendYield: fundamentals.dividendYield,
+        lastUpdated: now,
+        metricSources: {
+          if (fundamentals.per > 0) 'per': 'Naver Finance',
+          if (fundamentals.roe > 0) 'roe': 'Naver Finance',
+          if (fundamentals.dividendYield > 0) 'dividend': 'Naver Finance',
+        },
+        metricsUpdatedAt: now,
+      );
+    } catch (error) {
+      developer.log(
+        'Naver fundamentals failed for $stockCode: $error',
+        name: 'NaverStockRepository',
+        error: error,
+      );
+      return null;
+    }
+  }
+
+  Future<dynamic> _getJson(String url) async {
+    try {
+      return await _dioClient.get(url);
+    } catch (error) {
+      developer.log(
+        'Naver fundamentals request failed: $error',
         name: 'NaverStockRepository',
         error: error,
       );

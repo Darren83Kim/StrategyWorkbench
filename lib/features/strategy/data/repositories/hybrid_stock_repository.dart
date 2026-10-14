@@ -168,6 +168,10 @@ class HybridStockRepository implements StockRepository {
       }
     }
 
+    if (mergedStocks.isNotEmpty) {
+      await _enrichKeylessFundamentals(mergedStocks);
+    }
+
     if (_allowSampleMetricFill && mergedStocks.isNotEmpty) {
       // 전략 점수용 펀더멘탈이 비어 있으면 기존 mock 값을 보조 지표로 채운다.
       // release/personal 빌드에서는 샘플 지표로 순위를 만들지 않는다.
@@ -249,6 +253,10 @@ class HybridStockRepository implements StockRepository {
         developer.log('한국투자증권 failed: $e',
             name: 'HybridStockRepository', error: e);
       }
+    }
+
+    if (mergedStocks.isNotEmpty) {
+      await _enrichKeylessFundamentals(mergedStocks);
     }
 
     if (_allowSampleMetricFill && mergedStocks.isNotEmpty) {
@@ -361,6 +369,28 @@ class HybridStockRepository implements StockRepository {
         'KR': 'KRX+DART → Naver quote → 한국투자증권(debug) → Mock',
       },
     };
+  }
+
+  Future<void> _enrichKeylessFundamentals(Map<String, Stock> merged) async {
+    final pending = merged.values.where((stock) {
+      return stock.per <= 0 || stock.roe <= 0 || stock.dividendYield <= 0;
+    }).toList();
+    if (pending.isEmpty) {
+      return;
+    }
+
+    final updates = await Future.wait(
+      pending.map((stock) {
+        final korean = RegExp(r'^\d+$').hasMatch(stock.ticker);
+        return korean
+            ? _naverRepo.getFundamentals(stock.ticker)
+            : _nasdaqRepo.getFundamentals(stock.ticker);
+      }),
+    );
+    _fillExistingStocksFrom(
+      merged,
+      updates.whereType<Stock>().toList(),
+    );
   }
 
   Future<Stock> _fillFromMockIfNeeded(Stock stock) async {
