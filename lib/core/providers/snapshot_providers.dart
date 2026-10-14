@@ -22,6 +22,7 @@ class SnapshotStock {
   final double price;
   final double score;
   final int rank;
+  final bool ranked;
 
   const SnapshotStock({
     required this.ticker,
@@ -29,6 +30,7 @@ class SnapshotStock {
     required this.price,
     required this.score,
     required this.rank,
+    this.ranked = true,
   });
 
   Map<String, dynamic> toJson() => {
@@ -37,6 +39,7 @@ class SnapshotStock {
         'price': price,
         'score': score,
         'rank': rank,
+        'ranked': ranked,
       };
 
   factory SnapshotStock.fromJson(Map<String, dynamic> json) => SnapshotStock(
@@ -45,6 +48,7 @@ class SnapshotStock {
         price: (json['price'] as num).toDouble(),
         score: (json['score'] as num).toDouble(),
         rank: json['rank'] as int,
+        ranked: json['ranked'] as bool? ?? true,
       );
 }
 
@@ -106,7 +110,7 @@ String _snapKey(
   String strategyName, [
   MarketFilter marketFilter = MarketFilter.hybrid,
 ]) {
-  final base = 'snap_v3_${strategyName.replaceAll(' ', '_')}';
+  final base = 'snap_v4_${strategyName.replaceAll(' ', '_')}';
   if (marketFilter == MarketFilter.hybrid) {
     return base;
   }
@@ -132,11 +136,13 @@ Map<String, dynamic> _serializeSnapshotRequest({
   required List<Stock> stocks,
   required Map<String, double> weights,
   required int topN,
+  required bool rankMetrics,
 }) {
   return {
     'stocks': stocks.map(_serializeStrategyStock).toList(),
     'weights': weights,
     'topN': topN,
+    'rankMetrics': rankMetrics,
   };
 }
 
@@ -145,10 +151,13 @@ Future<List<SnapshotStock>> _buildSnapshotStocksInBackground({
   required Map<String, double> weights,
   required int topN,
 }) async {
+  final partition = SampleMetricPolicy.partitionForDisplay(stocks, weights);
+  final rankMetrics = partition.ranked.isNotEmpty;
   final payload = _serializeSnapshotRequest(
-    stocks: SampleMetricPolicy.rankableStocks(stocks, weights),
+    stocks: rankMetrics ? partition.ranked : partition.unranked,
     weights: weights,
     topN: topN,
+    rankMetrics: rankMetrics,
   );
   final results = await compute(_scoreSnapshotStocks, payload);
 
@@ -163,6 +172,22 @@ List<Map<String, dynamic>> _scoreSnapshotStocks(Map<String, dynamic> payload) {
       .toList();
   final weights = Map<String, double>.from(payload['weights'] as Map);
   final topN = payload['topN'] as int? ?? 10;
+  final rankMetrics = payload['rankMetrics'] as bool? ?? true;
+
+  if (!rankMetrics) {
+    return rawStocks
+        .map(
+          (item) => {
+            'ticker': item['ticker'],
+            'name': item['name'],
+            'price': item['price'],
+            'score': 0,
+            'rank': 0,
+            'ranked': false,
+          },
+        )
+        .toList();
+  }
 
   final marketStocks = rawStocks
       .map(
@@ -193,6 +218,7 @@ List<Map<String, dynamic>> _scoreSnapshotStocks(Map<String, dynamic> payload) {
           'price': entry.value.stock.price,
           'score': entry.value.score,
           'rank': entry.key + 1,
+          'ranked': true,
         },
       )
       .toList();

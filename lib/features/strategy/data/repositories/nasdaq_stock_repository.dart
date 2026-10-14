@@ -2,6 +2,7 @@ import 'dart:developer' as developer;
 
 import 'package:dio/dio.dart';
 import 'package:strategy_workbench/core/network/dio_client.dart';
+import 'package:strategy_workbench/features/strategy/data/repositories/keyless_fundamentals.dart';
 import 'package:strategy_workbench/features/strategy/data/repositories/stock_universe.dart';
 import 'package:strategy_workbench/features/strategy/domain/entities/stock.dart';
 
@@ -86,6 +87,79 @@ class NasdaqStockRepository {
     } catch (error) {
       developer.log(
         'Nasdaq quote fetch failed for $ticker: $error',
+        name: 'NasdaqStockRepository',
+        error: error,
+      );
+      return null;
+    }
+  }
+
+  /// Dividend yield and after-tax ROE from Nasdaq's public quote pages.
+  /// The quote info endpoint does not include PER.
+  Future<Stock?> getFundamentals(String ticker) async {
+    try {
+      final responses = await Future.wait([
+        _getJson('$_baseUrl/$ticker/summary?assetclass=stocks'),
+        _getJson(
+          'https://api.nasdaq.com/api/company/$ticker/financials?frequency=1',
+        ),
+      ]);
+      final dividendYield = responses[0] is Map
+          ? parseNasdaqDividendYield(
+              Map<dynamic, dynamic>.from(responses[0] as Map),
+            )
+          : null;
+      final roe = responses[1] is Map
+          ? parseNasdaqAfterTaxRoe(Map<dynamic, dynamic>.from(responses[1] as Map))
+          : null;
+      final fundamentals = KeylessFundamentals(
+        roe: roe ?? 0,
+        dividendYield: dividendYield ?? 0,
+      );
+      if (!fundamentals.hasAny) {
+        return null;
+      }
+
+      final now = DateTime.now();
+      return Stock(
+        ticker: ticker,
+        name: ticker,
+        price: 0,
+        per: 0,
+        roe: fundamentals.roe,
+        dividendYield: fundamentals.dividendYield,
+        lastUpdated: now,
+        metricSources: {
+          if (fundamentals.roe > 0) 'roe': 'Nasdaq',
+          if (fundamentals.dividendYield > 0) 'dividend': 'Nasdaq',
+        },
+        metricsUpdatedAt: now,
+      );
+    } catch (error) {
+      developer.log(
+        'Nasdaq fundamentals failed for $ticker: $error',
+        name: 'NasdaqStockRepository',
+        error: error,
+      );
+      return null;
+    }
+  }
+
+  Future<dynamic> _getJson(String url) async {
+    try {
+      return await _dioClient.get(
+        url,
+        options: Options(
+          headers: const {
+            'User-Agent':
+                'Mozilla/5.0 (Windows NT 10.0; Win64; x64) StrategyWorkbench/1.0',
+            'Accept': 'application/json, text/plain, */*',
+          },
+        ),
+      );
+    } catch (error) {
+      developer.log(
+        'Nasdaq fundamentals request failed: $error',
         name: 'NasdaqStockRepository',
         error: error,
       );

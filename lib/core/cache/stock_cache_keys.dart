@@ -1,2 +1,2 @@
 const stockCacheVersionKey = 'stock_cache_version';
-const stockCacheVersion = 4;
+const stockCacheVersion = 5;

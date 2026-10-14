@@ -1,3 +1,4 @@
+import java.util.Base64
 import java.util.Properties
 
 plugins {
@@ -107,7 +108,7 @@ fun decodeDartDefineToken(token: String): String {
     if (token.matches(Regex("^[A-Za-z0-9+/]+={0,2}$"))) {
         try {
             val decoded = String(
-                java.util.Base64.getDecoder().decode(token),
+                Base64.getDecoder().decode(token),
                 Charsets.UTF_8,
             )
             if (decoded.contains('=')) {
