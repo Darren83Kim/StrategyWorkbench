@@ -1,4 +1,5 @@
-<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools">
 
     <!-- 네트워크 (API 호출 필수) -->
     <uses-permission android:name="android.permission.INTERNET"/>
@@ -41,6 +42,14 @@
         <meta-data
             android:name="com.google.android.gms.ads.APPLICATION_ID"
             android:value="${admobApplicationId}" />
+
+        <!-- Crashlytics is optional. Auto-init crashes when google-services.json
+             is absent, so the app initializes Firebase only when that file and
+             ENABLE_CRASHLYTICS are both present. -->
+        <provider
+            android:name="com.google.firebase.provider.FirebaseInitProvider"
+            android:authorities="${applicationId}.firebaseinitprovider"
+            tools:node="remove" />
 
         <!-- Impeller 비활성화: 에뮬레이터 OpenGLES mipmap 크래시 방지 -->
         <!-- BackdropFilter(blur)가 Impeller+OpenGLES에서 SIGABRT 유발 -->

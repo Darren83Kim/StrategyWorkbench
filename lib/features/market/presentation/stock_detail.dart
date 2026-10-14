@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:strategy_workbench/core/config/store_policy.dart';
+import 'package:strategy_workbench/core/metrics/sample_metric_policy.dart';
 import 'package:strategy_workbench/core/market/market_classification.dart';
 import 'package:strategy_workbench/core/providers/language_provider.dart';
 import 'package:strategy_workbench/core/providers/learning_records_providers.dart';
@@ -170,19 +171,27 @@ class _StockDetailContent extends ConsumerWidget {
                     children: [
                       _MetricBadge(
                         'PER',
-                        stock.per > 0 ? stock.per.toStringAsFixed(1) : '없음',
+                        SampleMetricPolicy.fundamentalText(
+                          stock: stock,
+                          metric: 'per',
+                          formatted: stock.per.toStringAsFixed(1),
+                        ),
                       ),
                       _MetricBadge(
                         'ROE',
-                        stock.roe > 0
-                            ? '${stock.roe.toStringAsFixed(1)}%'
-                            : '없음',
+                        SampleMetricPolicy.fundamentalText(
+                          stock: stock,
+                          metric: 'roe',
+                          formatted: '${stock.roe.toStringAsFixed(1)}%',
+                        ),
                       ),
                       _MetricBadge(
                         '배당',
-                        stock.dividendYield > 0
-                            ? '${stock.dividendYield.toStringAsFixed(1)}%'
-                            : '없음',
+                        SampleMetricPolicy.fundamentalText(
+                          stock: stock,
+                          metric: 'dividend',
+                          formatted: '${stock.dividendYield.toStringAsFixed(1)}%',
+                        ),
                       ),
                     ],
                   ),
@@ -891,11 +900,15 @@ class _DataConfidenceCard extends StatelessWidget {
                 value: _relativeUpdatedAt(stock.metricsUpdatedAt!),
               ),
             ],
-            if (missingMetrics.isNotEmpty) ...[
+            if (missingMetrics.isNotEmpty ||
+                (SampleMetricPolicy.rejectSampleMetrics &&
+                    stock.usesSampleMetrics)) ...[
               const SizedBox(height: 8),
               _DataInfoRow(
                 label: '누락 지표',
-                value: missingMetrics.join(', '),
+                value: SampleMetricPolicy.rejectSampleMetrics
+                    ? missingMetricLabel
+                    : missingMetrics.join(', '),
                 valueColor: const Color(0xFFFB923C),
               ),
             ],

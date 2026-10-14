@@ -16,6 +16,8 @@ import 'package:strategy_workbench/features/learning/presentation/analysis_simul
 import 'package:strategy_workbench/features/learning/presentation/analysis_history_screen.dart';
 import 'package:strategy_workbench/features/learning/presentation/observation_notes_screen.dart';
 import 'package:strategy_workbench/features/learning/presentation/stock_comparison_screen.dart';
+import 'package:strategy_workbench/features/onboarding/onboarding_controller.dart';
+import 'package:strategy_workbench/features/onboarding/onboarding_screen.dart';
 import 'package:strategy_workbench/core/providers/stock_providers.dart'
     show MarketFilter;
 
@@ -25,6 +27,17 @@ final _shellNavigatorKey = GlobalKey<NavigatorState>();
 final appRouter = GoRouter(
   initialLocation: '/dashboard',
   navigatorKey: _rootNavigatorKey,
+  refreshListenable: onboardingController,
+  redirect: (context, state) {
+    final openingOnboarding = state.matchedLocation == '/onboarding';
+    if (!onboardingController.completed && !openingOnboarding) {
+      return '/onboarding';
+    }
+    if (onboardingController.completed && openingOnboarding) {
+      return '/dashboard';
+    }
+    return null;
+  },
   routes: [
     ShellRoute(
       navigatorKey: _shellNavigatorKey,
@@ -105,6 +118,11 @@ final appRouter = GoRouter(
             const <String>[];
         return StockComparisonScreen(initialSymbols: symbols);
       },
+    ),
+    GoRoute(
+      path: '/onboarding',
+      parentNavigatorKey: _rootNavigatorKey,
+      builder: (context, state) => const OnboardingScreen(),
     ),
     GoRoute(
       path: '/debug',

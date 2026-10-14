@@ -8,7 +8,11 @@ import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import 'package:strategy_workbench/core/config/admob_release_guard.dart';
 import 'package:strategy_workbench/core/config/store_policy.dart';
+import 'package:strategy_workbench/core/constants/api_keys.dart';
+import 'package:strategy_workbench/core/services/crash_reporting.dart';
+import 'package:strategy_workbench/features/onboarding/onboarding_controller.dart';
 import 'package:strategy_workbench/core/network/hive_service.dart';
 import 'package:strategy_workbench/core/providers/filter_providers.dart';
 import 'package:strategy_workbench/core/services/alert_runtime_service.dart';
@@ -23,25 +27,7 @@ import 'dart:developer' as developer;
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
-
-  // 전역 예외 핸들러 - 앱 강제 종료 방지 및 원인 로그 기록
-  FlutterError.onError = (FlutterErrorDetails details) {
-    developer.log(
-      'FlutterError: ${details.exception}',
-      name: 'FlutterError',
-      error: details.exception,
-      stackTrace: details.stack,
-    );
-  };
-  PlatformDispatcher.instance.onError = (error, stack) {
-    developer.log(
-      'PlatformError: $error',
-      name: 'PlatformError',
-      error: error,
-      stackTrace: stack,
-    );
-    return true; // true = 처리됨, 앱 종료 방지
-  };
+  await CrashReporting.install();
 
   developer.log('main() started', name: 'main');
 
@@ -52,6 +38,18 @@ Future<void> main() async {
   } catch (e) {
     developer.log('Warning: .env load failed: $e', name: 'main');
   }
+
+  if (!kIsWeb && defaultTargetPlatform == TargetPlatform.android) {
+    ensureReleaseAdmobIds(
+      isReleaseBuild: kReleaseMode,
+      appId: ApiKeys.admobAndroidAppId,
+      bannerId: ApiKeys.admobAndroidBannerId,
+      interstitialId: ApiKeys.admobAndroidInterstitialId,
+      forceTestIds: const bool.fromEnvironment('FORCE_ADMOB_TEST_IDS'),
+    );
+  }
+
+  await onboardingController.load();
 
   // 2. Hive 초기화 (runApp 전에 반드시 완료해야 함 - providers가 즉시 사용)
   final hiveService = HiveService();

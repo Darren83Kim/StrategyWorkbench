@@ -10,6 +10,7 @@ import 'package:strategy_workbench/features/strategy/data/repositories/stock_uni
 import 'package:strategy_workbench/features/strategy/domain/entities/stock.dart';
 import 'package:strategy_workbench/features/strategy/domain/repositories/stock_repository.dart';
 import 'package:strategy_workbench/core/constants/api_keys.dart';
+import 'package:strategy_workbench/core/metrics/sample_metric_policy.dart';
 import 'dart:developer' as developer;
 
 /// 데이터 소스 우선순위 (2026-03-09 재설계)
@@ -26,6 +27,7 @@ class HybridStockRepository implements StockRepository {
   final KorInvestmentRepository? _korRepo;
   final MockStockRepository _mockRepo;
   final bool _allowKorInvestmentFallback;
+  final bool _allowSampleMetricFill;
 
   HybridStockRepository({
     FinnhubStockRepository? finnhubRepository,
@@ -37,6 +39,7 @@ class HybridStockRepository implements StockRepository {
     KorInvestmentRepository? korRepository,
     MockStockRepository? mockRepository,
     bool? allowKorInvestmentFallback,
+    bool? allowSampleMetricFill,
   })  : _finnhubRepo = finnhubRepository ??
             (ApiKeys.isFinnhubConfigured ? FinnhubStockRepository() : null),
         _fmpRepo = fmpRepository ??
@@ -54,7 +57,9 @@ class HybridStockRepository implements StockRepository {
                     ApiKeys.isKorInvestmentConfigured
                 ? KorInvestmentRepository()
                 : null),
-        _mockRepo = mockRepository ?? MockStockRepository();
+        _mockRepo = mockRepository ?? MockStockRepository(),
+        _allowSampleMetricFill = allowSampleMetricFill ??
+            !SampleMetricPolicy.rejectSampleMetrics;
 
   // ── StockRepository 인터페이스 구현 ──
   @override
@@ -163,8 +168,9 @@ class HybridStockRepository implements StockRepository {
       }
     }
 
-    if (mergedStocks.isNotEmpty) {
+    if (_allowSampleMetricFill && mergedStocks.isNotEmpty) {
       // 전략 점수용 펀더멘탈이 비어 있으면 기존 mock 값을 보조 지표로 채운다.
+      // release/personal 빌드에서는 샘플 지표로 순위를 만들지 않는다.
       final mockStocks = await _mockRepo.getStocks();
       _fillExistingStocksFrom(
         mergedStocks,
@@ -182,8 +188,8 @@ class HybridStockRepository implements StockRepository {
       return orderedStocks;
     }
 
-    // API 키가 없을 때만 Mock 사용
-    if (!ApiKeys.isAnyRealApiConfigured) {
+    // API 키가 없을 때만 Mock 사용. release/personal은 샘플 랭킹을 만들지 않는다.
+    if (_allowSampleMetricFill && !ApiKeys.isAnyRealApiConfigured) {
       developer.log('No API keys, using Mock for US',
           name: 'HybridStockRepository');
       final mockStocks = await _mockRepo.getStocks();
@@ -245,8 +251,9 @@ class HybridStockRepository implements StockRepository {
       }
     }
 
-    if (mergedStocks.isNotEmpty) {
+    if (_allowSampleMetricFill && mergedStocks.isNotEmpty) {
       // 전략 점수용 펀더멘탈이 비어 있으면 기존 mock 값을 보조 지표로 채운다.
+      // release/personal 빌드에서는 샘플 지표로 순위를 만들지 않는다.
       final mockStocks = await _mockRepo.getStocks();
       _fillExistingStocksFrom(
         mergedStocks,
@@ -266,8 +273,9 @@ class HybridStockRepository implements StockRepository {
       return orderedStocks;
     }
 
-    // debug에서 KIS 자동 인증을 막는 경우를 포함해 KR 소스가 없으면 Mock 사용
-    if (!hasKrRealSource) {
+    // debug에서 KIS 자동 인증을 막는 경우를 포함해 KR 소스가 없으면 Mock 사용.
+    // release/personal은 샘플 종목으로 순위를 채우지 않는다.
+    if (_allowSampleMetricFill && !hasKrRealSource) {
       developer.log('No enabled KR sources, using Mock for KR',
           name: 'HybridStockRepository');
       final mockStocks = await _mockRepo.getStocks();
@@ -320,6 +328,9 @@ class HybridStockRepository implements StockRepository {
         }
       }
 
+      if (!_allowSampleMetricFill) {
+        return null;
+      }
       // Mock에서 확인
       return await _mockRepo.getStockByTicker(symbol);
     } catch (e) {
@@ -353,6 +364,9 @@ class HybridStockRepository implements StockRepository {
   }
 
   Future<Stock> _fillFromMockIfNeeded(Stock stock) async {
+    if (!_allowSampleMetricFill) {
+      return stock;
+    }
     if (stock.per > 0 && stock.roe > 0 && stock.dividendYield > 0) {
       return stock;
     }

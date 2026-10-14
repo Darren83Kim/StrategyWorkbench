@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:strategy_workbench/core/market/market_classification.dart';
+import 'package:strategy_workbench/core/metrics/sample_metric_policy.dart';
 import 'package:strategy_workbench/core/providers/stock_providers.dart';
 import 'package:strategy_workbench/core/providers/language_provider.dart';
 import 'package:strategy_workbench/shared/widgets/glass_container.dart';
@@ -104,10 +105,20 @@ class MarketScreen extends ConsumerWidget {
                                 mainAxisSize: MainAxisSize.min,
                                 children: [
                                   _buildTag(
-                                      'PER ${stock.per.toStringAsFixed(1)}'),
+                                    'PER ${SampleMetricPolicy.fundamentalText(
+                                      stock: stock,
+                                      metric: 'per',
+                                      formatted: stock.per.toStringAsFixed(1),
+                                    )}',
+                                  ),
                                   const SizedBox(width: 4),
                                   _buildTag(
-                                      'ROE ${stock.roe.toStringAsFixed(1)}%'),
+                                    'ROE ${SampleMetricPolicy.fundamentalText(
+                                      stock: stock,
+                                      metric: 'roe',
+                                      formatted: '${stock.roe.toStringAsFixed(1)}%',
+                                    )}',
+                                  ),
                                 ],
                               ),
                             ],

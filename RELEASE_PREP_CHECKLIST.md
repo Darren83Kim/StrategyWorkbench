@@ -1,6 +1,25 @@
 # Strategy Workbench Release Prep Checklist
 
-- Last updated: 2026-07-10
+## Play release path (v1.0.1+15)
+
+Play 출시 AAB/APK는 `tool/build_play_release.ps1`로만 만든다. 이 스크립트가 아니면 release 빌드는 실패한다.
+
+- 로컬 `.env`에 운영 `ADMOB_ANDROID_APP_ID`, `ADMOB_ANDROID_BANNER_ID`, `ADMOB_ANDROID_INTERSTITIAL_ID`가 있어야 한다. `.env`는 커밋하지 않는다.
+- Gradle이 매니페스트 App ID placeholder와 `--dart-define` 세 값을 검사한다. 값이 비었거나 Google 샘플 ID(`ca-app-pub-3940256099942544`)이면 release task가 중단된다.
+- `FORCE_ADMOB_TEST_IDS=true`도 release에서 거부된다.
+- 명령: `powershell -File tool/build_play_release.ps1`
+
+업로드 전 AAB 광고 ID 확인:
+
+```text
+bundletool dump manifest --bundle=build/app/outputs/bundle/release/app-release.aab
+```
+
+매니페스트의 `com.google.android.gms.ads.APPLICATION_ID`가 운영 앱 ID인지 확인한다. Dart에 들어간 배너/전면 ID는 AAB를 임시 폴더에 푼 뒤 `lib/*/libapp.so`에 `strings`를 걸어 `ca-app-pub-`를 찾는다. 운영 퍼블리셔 ID만 있어야 하고 Google 샘플 퍼블리셔 `ca-app-pub-3940256099942544`는 없어야 한다.
+
+Crashlytics는 기본 꺼져 있다. 켜려면 Firebase 콘솔에서 Android 앱 `com.round1studio.strategyworkbench`용 `google-services.json`을 받아 `android/app/google-services.json`에 두고(커밋 금지), 빌드 인자 `--dart-define=ENABLE_CRASHLYTICS=true`를 추가한다.
+
+- Last updated: 2026-10-14
 - Purpose: 배포 전 남은 외부 계정, API 키, AdMob, Play Store 준비물을 빠르게 확인하기 위한 체크리스트
 - Personal developer release plan: `PERSONAL_DEVELOPER_RELEASE_PLAN.md`
 

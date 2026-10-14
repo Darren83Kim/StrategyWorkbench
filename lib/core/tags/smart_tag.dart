@@ -1,3 +1,4 @@
+import '../metrics/sample_metric_policy.dart';
 import '../../features/strategy/domain/entities/stock.dart';
 
 class SmartTagger {
@@ -10,14 +11,29 @@ class SmartTagger {
   List<String> generateTags(Stock stock) {
     final tags = <String>[];
     try {
-      if (stock.per > 0 && stock.per < 10) tags.add('#저평가');
+      if (_usable(stock, 'per') && stock.per < 10) tags.add('#저평가');
     } catch (_) {}
     try {
-      if (stock.roe > 15) tags.add('#우량주');
+      if (_usable(stock, 'roe') && stock.roe > 15) tags.add('#우량주');
     } catch (_) {}
     try {
-      if (stock.dividendYield > 4) tags.add('#고배당');
+      if (_usable(stock, 'dividend') && stock.dividendYield > 4) {
+        tags.add('#고배당');
+      }
     } catch (_) {}
     return tags;
+  }
+
+  bool _usable(Stock stock, String metric) {
+    if (SampleMetricPolicy.rejectSampleMetrics &&
+        SampleMetricPolicy.isSampleMetric(stock, metric)) {
+      return false;
+    }
+    return switch (metric) {
+      'per' => stock.per > 0,
+      'roe' => stock.roe > 0,
+      'dividend' => stock.dividendYield > 0,
+      _ => false,
+    };
   }
 }
