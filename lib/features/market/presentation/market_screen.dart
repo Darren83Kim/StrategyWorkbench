@@ -2,7 +2,10 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:strategy_workbench/core/market/market_classification.dart';
+import 'package:strategy_workbench/core/metrics/empty_metric_help.dart';
 import 'package:strategy_workbench/core/metrics/sample_metric_policy.dart';
+import 'package:strategy_workbench/features/learning/presentation/empty_metric_help_sheet.dart';
+import 'package:strategy_workbench/features/strategy/domain/entities/stock.dart';
 import 'package:strategy_workbench/core/providers/stock_providers.dart';
 import 'package:strategy_workbench/core/providers/language_provider.dart';
 import 'package:strategy_workbench/shared/widgets/glass_container.dart';
@@ -68,18 +71,21 @@ class MarketScreen extends ConsumerWidget {
                 stock.ticker,
                 stock.name,
               );
+              final korean =
+                  (ref.watch(languageProvider).value ?? 'en') == 'ko';
               return Padding(
                 padding:
                     const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                child: InkWell(
-                  onTap: () => context.push('/market/${stock.ticker}'),
-                  child: GlassContainer(
-                    child: Padding(
-                      padding: const EdgeInsets.all(16),
-                      child: Row(
-                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                        children: [
-                          Expanded(
+                child: GlassContainer(
+                  child: Padding(
+                    padding: const EdgeInsets.all(16),
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        Expanded(
+                          child: InkWell(
+                            onTap: () =>
+                                context.push('/market/${stock.ticker}'),
                             child: Column(
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
@@ -94,37 +100,36 @@ class MarketScreen extends ConsumerWidget {
                               ],
                             ),
                           ),
-                          Column(
-                            crossAxisAlignment: CrossAxisAlignment.end,
-                            children: [
-                              Text(formatMarketPrice(stock.ticker, stock.price),
-                                  style: const TextStyle(
-                                      fontSize: 18,
-                                      fontWeight: FontWeight.bold)),
-                              Row(
-                                mainAxisSize: MainAxisSize.min,
-                                children: [
-                                  _buildTag(
-                                    'PER ${SampleMetricPolicy.fundamentalText(
-                                      stock: stock,
-                                      metric: 'per',
-                                      formatted: stock.per.toStringAsFixed(1),
-                                    )}',
-                                  ),
-                                  const SizedBox(width: 4),
-                                  _buildTag(
-                                    'ROE ${SampleMetricPolicy.fundamentalText(
-                                      stock: stock,
-                                      metric: 'roe',
-                                      formatted: '${stock.roe.toStringAsFixed(1)}%',
-                                    )}',
-                                  ),
-                                ],
-                              ),
-                            ],
-                          ),
-                        ],
-                      ),
+                        ),
+                        Column(
+                          crossAxisAlignment: CrossAxisAlignment.end,
+                          children: [
+                            Text(formatMarketPrice(stock.ticker, stock.price),
+                                style: const TextStyle(
+                                    fontSize: 18,
+                                    fontWeight: FontWeight.bold)),
+                            Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                _MetricTag(
+                                  stock: stock,
+                                  metricKey: 'per',
+                                  formatted: stock.per.toStringAsFixed(1),
+                                  korean: korean,
+                                ),
+                                const SizedBox(width: 4),
+                                _MetricTag(
+                                  stock: stock,
+                                  metricKey: 'roe',
+                                  formatted:
+                                      '${stock.roe.toStringAsFixed(1)}%',
+                                  korean: korean,
+                                ),
+                              ],
+                            ),
+                          ],
+                        ),
+                      ],
                     ),
                   ),
                 ),
@@ -136,13 +141,59 @@ class MarketScreen extends ConsumerWidget {
     );
   }
 
-  Widget _buildTag(String text) {
-    return Container(
+}
+
+class _MetricTag extends StatelessWidget {
+  final Stock stock;
+  final String metricKey;
+  final String formatted;
+  final bool korean;
+
+  const _MetricTag({
+    required this.stock,
+    required this.metricKey,
+    required this.formatted,
+    required this.korean,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final value = SampleMetricPolicy.fundamentalText(
+      stock: stock,
+      metric: metricKey,
+      formatted: formatted,
+    );
+    final empty = EmptyMetricHelp.isEmptyMetricLabel(value);
+    final label = '${EmptyMetricHelp.labelFor(metricKey)} $value';
+    final tag = Container(
       padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
       decoration: BoxDecoration(
-          color: Colors.grey[800], borderRadius: BorderRadius.circular(4)),
-      child: Text(text,
-          style: const TextStyle(color: Colors.white70, fontSize: 10)),
+        color: empty ? const Color(0xFF7C2D12) : Colors.grey[800],
+        borderRadius: BorderRadius.circular(4),
+      ),
+      child: Text(
+        label,
+        style: TextStyle(
+          color: empty ? const Color(0xFFFDBA74) : Colors.white70,
+          fontSize: 10,
+          fontWeight: empty ? FontWeight.w700 : FontWeight.w500,
+        ),
+      ),
+    );
+    if (!empty) {
+      return tag;
+    }
+    return GestureDetector(
+      onTap: () => showEmptyMetricHelp(
+        context,
+        EmptyMetricHelp.forStock(
+          stock: stock,
+          metricKey: metricKey,
+          korean: korean,
+        ),
+        korean: korean,
+      ),
+      child: tag,
     );
   }
 }

@@ -4,6 +4,7 @@ import 'dart:developer' as developer;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:strategy_workbench/core/market/market_classification.dart';
+import 'package:strategy_workbench/core/strategy/strategy_names.dart';
 import 'package:strategy_workbench/core/providers/analysis_simulator_providers.dart';
 import 'package:strategy_workbench/core/providers/stock_providers.dart';
 
@@ -196,7 +197,8 @@ class AnalysisHistoryEntry {
         MarketFilter.hybrid;
     return AnalysisHistoryEntry(
       id: json['id'] as String? ?? '',
-      strategyName: json['strategyName'] as String? ?? '',
+      strategyName:
+          canonicalStrategyName(json['strategyName'] as String? ?? ''),
       marketFilter: market,
       weights: (json['weights'] as Map? ?? const <String, dynamic>{}).map(
         (key, value) => MapEntry(key.toString(), (value as num).toDouble()),

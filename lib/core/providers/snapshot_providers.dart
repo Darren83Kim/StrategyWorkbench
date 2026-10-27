@@ -23,6 +23,10 @@ class SnapshotStock {
   final double score;
   final int rank;
   final bool ranked;
+  final double? per;
+  final double? roe;
+  final double? dividendYield;
+  final bool metricsKnown;
 
   const SnapshotStock({
     required this.ticker,
@@ -31,6 +35,10 @@ class SnapshotStock {
     required this.score,
     required this.rank,
     this.ranked = true,
+    this.per,
+    this.roe,
+    this.dividendYield,
+    this.metricsKnown = false,
   });
 
   Map<String, dynamic> toJson() => {
@@ -40,6 +48,10 @@ class SnapshotStock {
         'score': score,
         'rank': rank,
         'ranked': ranked,
+        'per': per,
+        'roe': roe,
+        'dividendYield': dividendYield,
+        'metricsKnown': metricsKnown,
       };
 
   factory SnapshotStock.fromJson(Map<String, dynamic> json) => SnapshotStock(
@@ -49,6 +61,10 @@ class SnapshotStock {
         score: (json['score'] as num).toDouble(),
         rank: json['rank'] as int,
         ranked: json['ranked'] as bool? ?? true,
+        per: (json['per'] as num?)?.toDouble(),
+        roe: (json['roe'] as num?)?.toDouble(),
+        dividendYield: (json['dividendYield'] as num?)?.toDouble(),
+        metricsKnown: json['metricsKnown'] as bool? ?? false,
       );
 }
 
@@ -110,7 +126,7 @@ String _snapKey(
   String strategyName, [
   MarketFilter marketFilter = MarketFilter.hybrid,
 ]) {
-  final base = 'snap_v4_${strategyName.replaceAll(' ', '_')}';
+  final base = 'snap_v5_${strategyName.replaceAll(' ', '_')}';
   if (marketFilter == MarketFilter.hybrid) {
     return base;
   }
@@ -166,6 +182,26 @@ Future<List<SnapshotStock>> _buildSnapshotStocksInBackground({
       .toList();
 }
 
+Map<String, dynamic> _snapshotJson(
+  Map<String, dynamic> item, {
+  required num score,
+  required int rank,
+  required bool ranked,
+}) {
+  return {
+    'ticker': item['ticker'],
+    'name': item['name'],
+    'price': item['price'],
+    'score': score,
+    'rank': rank,
+    'ranked': ranked,
+    'per': item['per'],
+    'roe': item['roe'],
+    'dividendYield': item['dividendYield'],
+    'metricsKnown': true,
+  };
+}
+
 List<Map<String, dynamic>> _scoreSnapshotStocks(Map<String, dynamic> payload) {
   final rawStocks = (payload['stocks'] as List<dynamic>)
       .map((item) => Map<String, dynamic>.from(item as Map))
@@ -177,14 +213,7 @@ List<Map<String, dynamic>> _scoreSnapshotStocks(Map<String, dynamic> payload) {
   if (!rankMetrics) {
     return rawStocks
         .map(
-          (item) => {
-            'ticker': item['ticker'],
-            'name': item['name'],
-            'price': item['price'],
-            'score': 0,
-            'rank': 0,
-            'ranked': false,
-          },
+          (item) => _snapshotJson(item, score: 0, rank: 0, ranked: false),
         )
         .toList();
   }
@@ -212,14 +241,19 @@ List<Map<String, dynamic>> _scoreSnapshotStocks(Map<String, dynamic> payload) {
       .asMap()
       .entries
       .map(
-        (entry) => {
-          'ticker': entry.value.stock.symbol,
-          'name': entry.value.stock.name,
-          'price': entry.value.stock.price,
-          'score': entry.value.score,
-          'rank': entry.key + 1,
-          'ranked': true,
-        },
+        (entry) => _snapshotJson(
+          {
+            'ticker': entry.value.stock.symbol,
+            'name': entry.value.stock.name,
+            'price': entry.value.stock.price,
+            'per': entry.value.stock.per,
+            'roe': entry.value.stock.roe,
+            'dividendYield': entry.value.stock.dividendYield,
+          },
+          score: entry.value.score,
+          rank: entry.key + 1,
+          ranked: true,
+        ),
       )
       .toList();
 }

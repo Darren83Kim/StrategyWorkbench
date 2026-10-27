@@ -11,7 +11,10 @@ import 'package:strategy_workbench/core/providers/filter_providers.dart';
 import 'package:strategy_workbench/features/strategy/presentation/filter_creation_screen.dart';
 import 'package:strategy_workbench/features/strategy/presentation/strategy_screen.dart';
 import 'package:strategy_workbench/features/portfolio/presentation/portfolio_screen.dart';
+import 'package:strategy_workbench/features/learning/presentation/daily_question_screen.dart';
+import 'package:strategy_workbench/features/learning/presentation/metric_calculator_screen.dart';
 import 'package:strategy_workbench/features/learning/presentation/metric_dictionary_screen.dart';
+import 'package:strategy_workbench/features/learning/presentation/preset_walkthrough_screen.dart';
 import 'package:strategy_workbench/features/learning/presentation/analysis_simulator_screen.dart';
 import 'package:strategy_workbench/features/learning/presentation/analysis_history_screen.dart';
 import 'package:strategy_workbench/features/learning/presentation/observation_notes_screen.dart';
@@ -80,6 +83,21 @@ final appRouter = GoRouter(
       path: '/metric-dictionary',
       parentNavigatorKey: _rootNavigatorKey,
       builder: (context, state) => const MetricDictionaryScreen(),
+    ),
+    GoRoute(
+      path: '/metric-calculator',
+      parentNavigatorKey: _rootNavigatorKey,
+      builder: (context, state) => const MetricCalculatorScreen(),
+    ),
+    GoRoute(
+      path: '/preset-walkthrough',
+      parentNavigatorKey: _rootNavigatorKey,
+      builder: (context, state) => const PresetWalkthroughScreen(),
+    ),
+    GoRoute(
+      path: '/daily-question',
+      parentNavigatorKey: _rootNavigatorKey,
+      builder: (context, state) => const DailyQuestionScreen(),
     ),
     GoRoute(
       path: '/analysis-lab',

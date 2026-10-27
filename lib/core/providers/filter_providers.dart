@@ -3,6 +3,7 @@ import 'dart:developer' as developer;
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:strategy_workbench/core/strategy/strategy_names.dart';
 
 const savedFiltersStorageKey = 'saved_filters';
 const activeStrategyNameStorageKey = 'active_strategy_name';
@@ -84,12 +85,53 @@ final presetStrategies = [
     isPreset: true,
   ),
   SavedFilter(
-    name: '급등주',
+    name: profitabilityPresetName,
     weights: {'roe': 0.80, 'per': 0.20},
     topN: 10,
     isPreset: true,
   ),
 ];
+
+List<SavedFilter> migrateSavedFilters(List<SavedFilter> filters) {
+  final chosen = <String, SavedFilter>{};
+  for (final filter in filters) {
+    final name = canonicalStrategyName(filter.name);
+    final renamed = name == filter.name
+        ? filter
+        : SavedFilter(
+            name: name,
+            weights: Map<String, double>.from(filter.weights),
+            createdAt: filter.createdAt,
+            topN: filter.topN,
+            sensitivity: filter.sensitivity,
+            isPreset: filter.isPreset,
+          );
+    final existing = chosen[name];
+    if (existing == null || filter.name == name) {
+      chosen[name] = renamed;
+    }
+  }
+
+  final seen = <String>{};
+  final ordered = <SavedFilter>[];
+  for (final filter in filters) {
+    final name = canonicalStrategyName(filter.name);
+    if (seen.add(name)) {
+      ordered.add(chosen[name]!);
+    }
+  }
+  return ordered;
+}
+
+Map<String, Set<String>> migrateWatchlistKeys(Map<String, Set<String>> raw) {
+  final merged = <String, Set<String>>{};
+  for (final entry in raw.entries) {
+    merged
+        .putIfAbsent(canonicalStrategyName(entry.key), () => <String>{})
+        .addAll(entry.value);
+  }
+  return merged;
+}
 
 // ── 저장된 필터 목록 관리 (SharedPreferences) ──
 class SavedFiltersNotifier extends AsyncNotifier<List<SavedFilter>> {
@@ -104,14 +146,22 @@ class SavedFiltersNotifier extends AsyncNotifier<List<SavedFilter>> {
       final jsonString = prefs.getString(savedFiltersStorageKey);
       if (jsonString == null) return [];
       final List<dynamic> jsonList = jsonDecode(jsonString);
-      return jsonList
+      final loaded = jsonList
           .map((j) => SavedFilter.fromJson(j as Map<String, dynamic>))
           .toList();
+      final migrated = migrateSavedFilters(loaded);
+      if (_savedFilterNames(loaded) != _savedFilterNames(migrated)) {
+        await _saveToStorage(migrated);
+      }
+      return migrated;
     } catch (e) {
       developer.log('Error loading filters: $e', name: 'SavedFiltersNotifier');
       return [];
     }
   }
+
+  String _savedFilterNames(List<SavedFilter> filters) =>
+      filters.map((filter) => filter.name).join('\u0001');
 
   Future<void> _saveToStorage(List<SavedFilter> filters) async {
     try {
@@ -193,9 +243,14 @@ class WatchlistNotifier extends AsyncNotifier<Map<String, Set<String>>> {
       final json = prefs.getString(watchlistStorageKey);
       if (json == null) return {};
       final Map<String, dynamic> raw = jsonDecode(json);
-      return raw.map(
+      final loaded = raw.map(
         (k, v) => MapEntry(k, Set<String>.from((v as List).cast<String>())),
       );
+      final migrated = migrateWatchlistKeys(loaded);
+      if (loaded.keys.join('\u0001') != migrated.keys.join('\u0001')) {
+        await _persist(migrated);
+      }
+      return migrated;
     } catch (e) {
       developer.log('Error loading watchlist: $e', name: 'WatchlistNotifier');
       return {};
@@ -243,7 +298,15 @@ class ActiveStrategyNameNotifier extends AsyncNotifier<String?> {
   Future<String?> build() async {
     try {
       final prefs = await SharedPreferences.getInstance();
-      return prefs.getString(activeStrategyNameStorageKey);
+      final stored = prefs.getString(activeStrategyNameStorageKey);
+      if (stored == null || stored.isEmpty) {
+        return stored;
+      }
+      final canonical = canonicalStrategyName(stored);
+      if (canonical != stored) {
+        await prefs.setString(activeStrategyNameStorageKey, canonical);
+      }
+      return canonical;
     } catch (e) {
       developer.log(
         'Error loading active strategy: $e',

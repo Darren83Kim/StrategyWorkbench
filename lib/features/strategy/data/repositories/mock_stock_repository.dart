@@ -172,7 +172,7 @@ class MockStockRepository implements StockRepository {
           dividendYield: 2.1,
           lastUpdated: now),
 
-      // ── 한국 주식 (급등주 성향: 높은 ROE) ──
+      // ── 한국 주식 (수익성 학습 표본: 높은 ROE) ──
       Stock(
           ticker: '000660',
           name: 'SK하이닉스',
@@ -346,7 +346,7 @@ class MockStockRepository implements StockRepository {
           dividendYield: 3.4,
           lastUpdated: now),
 
-      // ── 미국 주식 (급등주: 높은 ROE) ──
+      // ── 미국 주식 (수익성 학습 표본: 높은 ROE) ──
       Stock(
           ticker: 'AAPL',
           name: 'Apple Inc.',

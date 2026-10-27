@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:go_router/go_router.dart';
 import 'package:strategy_workbench/shared/widgets/glass_container.dart';
 
 class MetricDictionaryScreen extends StatelessWidget {
@@ -18,7 +19,7 @@ class MetricDictionaryScreen extends StatelessWidget {
       subtitle: 'Return On Equity',
       summary: '자기자본으로 얼마나 효율적으로 이익을 만들었는지 보는 수익성 지표입니다.',
       reading: '높을수록 수익성이 좋게 해석되지만, 일회성 이익이나 과도한 부채 영향도 구분해야 합니다.',
-      appUsage: '급등주/퀀트 기준에서는 ROE가 높을수록 지표 점수에 더 크게 반영될 수 있습니다.',
+      appUsage: '수익성/퀀트 기준에서는 ROE가 높을수록 지표 점수에 더 크게 반영될 수 있습니다.',
       accent: Color(0xFF10B981),
     ),
     _MetricDictionaryEntry(
@@ -99,6 +100,23 @@ class MetricDictionaryScreen extends StatelessWidget {
                 ],
               ),
             ),
+          ),
+          const SizedBox(height: 14),
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: [
+              OutlinedButton.icon(
+                onPressed: () => context.push('/metric-calculator'),
+                icon: const Icon(Icons.calculate_outlined, size: 16),
+                label: const Text('숫자로 계산해 보기'),
+              ),
+              OutlinedButton.icon(
+                onPressed: () => context.push('/preset-walkthrough'),
+                icon: const Icon(Icons.route_outlined, size: 16),
+                label: const Text('프리셋 따라 하기'),
+              ),
+            ],
           ),
           const SizedBox(height: 14),
           ..._entries.map(
