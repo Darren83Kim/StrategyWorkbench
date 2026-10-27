@@ -3,7 +3,9 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:strategy_workbench/core/config/store_policy.dart';
+import 'package:strategy_workbench/core/metrics/empty_metric_help.dart';
 import 'package:strategy_workbench/core/metrics/sample_metric_policy.dart';
+import 'package:strategy_workbench/features/learning/presentation/empty_metric_help_sheet.dart';
 import 'package:strategy_workbench/core/market/market_classification.dart';
 import 'package:strategy_workbench/core/providers/language_provider.dart';
 import 'package:strategy_workbench/core/providers/learning_records_providers.dart';
@@ -80,6 +82,7 @@ class _StockDetailContent extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final strings = ref.watch(stringsProvider);
+    final korean = (ref.watch(languageProvider).value ?? 'en') == 'ko';
     final transactionsAsync = StorePolicy.showPortfolioFeatures
         ? ref.watch(transactionsByTickerProvider(detail.stock.ticker))
         : null;
@@ -170,28 +173,47 @@ class _StockDetailContent extends ConsumerWidget {
                     runSpacing: 8,
                     children: [
                       _MetricBadge(
-                        'PER',
-                        SampleMetricPolicy.fundamentalText(
+                        label: 'PER',
+                        value: SampleMetricPolicy.fundamentalText(
                           stock: stock,
                           metric: 'per',
                           formatted: stock.per.toStringAsFixed(1),
                         ),
+                        explanation: EmptyMetricHelp.forStock(
+                          stock: stock,
+                          metricKey: 'per',
+                          korean: korean,
+                        ),
+                        korean: korean,
                       ),
                       _MetricBadge(
-                        'ROE',
-                        SampleMetricPolicy.fundamentalText(
+                        label: 'ROE',
+                        value: SampleMetricPolicy.fundamentalText(
                           stock: stock,
                           metric: 'roe',
                           formatted: '${stock.roe.toStringAsFixed(1)}%',
                         ),
+                        explanation: EmptyMetricHelp.forStock(
+                          stock: stock,
+                          metricKey: 'roe',
+                          korean: korean,
+                        ),
+                        korean: korean,
                       ),
                       _MetricBadge(
-                        '배당',
-                        SampleMetricPolicy.fundamentalText(
+                        label: korean ? '배당' : 'Dividend',
+                        value: SampleMetricPolicy.fundamentalText(
                           stock: stock,
                           metric: 'dividend',
-                          formatted: '${stock.dividendYield.toStringAsFixed(1)}%',
+                          formatted:
+                              '${stock.dividendYield.toStringAsFixed(1)}%',
                         ),
+                        explanation: EmptyMetricHelp.forStock(
+                          stock: stock,
+                          metricKey: 'dividend',
+                          korean: korean,
+                        ),
+                        korean: korean,
                       ),
                     ],
                   ),
@@ -223,7 +245,7 @@ class _StockDetailContent extends ConsumerWidget {
             ),
           ),
           const SizedBox(height: 16),
-          _DataConfidenceCard(stock: stock),
+          _DataConfidenceCard(stock: stock, korean: korean),
           const SizedBox(height: 16),
           if (StorePolicy.isPersonalMode) ...[
             _ObservationNoteSummaryCard(
@@ -767,12 +789,15 @@ Future<void> _showObservationNoteEditor({
 
 class _DataConfidenceCard extends StatelessWidget {
   final Stock stock;
+  final bool korean;
 
-  const _DataConfidenceCard({required this.stock});
+  const _DataConfidenceCard({
+    required this.stock,
+    required this.korean,
+  });
 
   @override
   Widget build(BuildContext context) {
-    final missingMetrics = stock.missingMetrics;
     final status = _confidenceStatus(stock);
     final accent = _confidenceColor(stock);
     final metricSources = const {
@@ -900,16 +925,28 @@ class _DataConfidenceCard extends StatelessWidget {
                 value: _relativeUpdatedAt(stock.metricsUpdatedAt!),
               ),
             ],
-            if (missingMetrics.isNotEmpty ||
-                (SampleMetricPolicy.rejectSampleMetrics &&
-                    stock.usesSampleMetrics)) ...[
+            if (EmptyMetricHelp.emptyKeysFor(stock).isNotEmpty) ...[
               const SizedBox(height: 8),
-              _DataInfoRow(
-                label: '누락 지표',
-                value: SampleMetricPolicy.rejectSampleMetrics
-                    ? missingMetricLabel
-                    : missingMetrics.join(', '),
-                valueColor: const Color(0xFFFB923C),
+              Text(
+                korean ? '비어 있는 지표' : 'Empty metrics',
+                style: const TextStyle(color: Colors.white54, fontSize: 11),
+              ),
+              const SizedBox(height: 6),
+              Wrap(
+                spacing: 6,
+                runSpacing: 6,
+                children: [
+                  for (final key in EmptyMetricHelp.emptyKeysFor(stock))
+                    EmptyMetricChip(
+                      label:
+                          '${EmptyMetricHelp.labelFor(key)} · ${korean ? missingMetricLabel : 'no metric'}',
+                      explanation: EmptyMetricHelp.forStock(
+                        stock: stock,
+                        metricKey: key,
+                        korean: korean,
+                      ),
+                    ),
+                ],
               ),
             ],
             if (stock.usesSampleMetrics) ...[
@@ -953,12 +990,10 @@ class _DataConfidenceCard extends StatelessWidget {
 class _DataInfoRow extends StatelessWidget {
   final String label;
   final String value;
-  final Color valueColor;
 
   const _DataInfoRow({
     required this.label,
     required this.value,
-    this.valueColor = Colors.white70,
   });
 
   @override
@@ -978,8 +1013,8 @@ class _DataInfoRow extends StatelessWidget {
             child: Text(
               value,
               textAlign: TextAlign.right,
-              style: TextStyle(
-                color: valueColor,
+              style: const TextStyle(
+                color: Colors.white70,
                 fontSize: 11,
                 fontWeight: FontWeight.w600,
               ),
@@ -1034,21 +1069,60 @@ String _relativeUpdatedAt(DateTime updatedAt) {
 class _MetricBadge extends StatelessWidget {
   final String label;
   final String value;
+  final EmptyMetricExplanation explanation;
+  final bool korean;
 
-  const _MetricBadge(this.label, this.value);
+  const _MetricBadge({
+    required this.label,
+    required this.value,
+    required this.explanation,
+    required this.korean,
+  });
 
   @override
   Widget build(BuildContext context) {
-    return Container(
+    final empty = EmptyMetricHelp.isEmptyMetricLabel(value);
+    final chip = Container(
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
       decoration: BoxDecoration(
-        color: const Color(0x1AFFFFFF),
+        color: empty
+            ? const Color(0xFF7C2D12).withValues(alpha: 0.35)
+            : const Color(0x1AFFFFFF),
         borderRadius: BorderRadius.circular(12),
       ),
-      child: Text(
-        '$label $value',
-        style: const TextStyle(color: Colors.white70, fontSize: 12),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Text(
+            '$label $value',
+            style: TextStyle(
+              color: empty ? const Color(0xFFFDBA74) : Colors.white70,
+              fontSize: 12,
+              fontWeight: empty ? FontWeight.w700 : FontWeight.w500,
+            ),
+          ),
+          if (empty) ...[
+            const SizedBox(width: 4),
+            const Icon(
+              Icons.help_outline_rounded,
+              size: 14,
+              color: Color(0xFFFDBA74),
+            ),
+          ],
+        ],
       ),
+    );
+    if (!empty) {
+      return chip;
+    }
+    return InkWell(
+      borderRadius: BorderRadius.circular(12),
+      onTap: () => showEmptyMetricHelp(
+        context,
+        explanation,
+        korean: korean,
+      ),
+      child: chip,
     );
   }
 }

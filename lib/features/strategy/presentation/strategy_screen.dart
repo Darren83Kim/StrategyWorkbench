@@ -4,7 +4,9 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:strategy_workbench/core/config/store_policy.dart';
+import 'package:strategy_workbench/core/metrics/empty_metric_help.dart';
 import 'package:strategy_workbench/core/metrics/sample_metric_policy.dart';
+import 'package:strategy_workbench/features/learning/presentation/empty_metric_help_sheet.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:strategy_workbench/core/market/market_classification.dart';
 import 'package:strategy_workbench/core/providers/filter_providers.dart';
@@ -257,6 +259,30 @@ class _StrategyScreenState extends ConsumerState<StrategyScreen> {
           ),
           Padding(
             padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+            child: Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: [
+                _LearningShortcut(
+                  icon: Icons.route_outlined,
+                  label: lang == 'ko' ? '프리셋 따라 하기' : 'Preset walkthrough',
+                  onTap: () => context.push('/preset-walkthrough'),
+                ),
+                _LearningShortcut(
+                  icon: Icons.calculate_outlined,
+                  label: lang == 'ko' ? '지표 계산기' : 'Metric calculator',
+                  onTap: () => context.push('/metric-calculator'),
+                ),
+                _LearningShortcut(
+                  icon: Icons.quiz_outlined,
+                  label: lang == 'ko' ? '오늘의 한 문제' : 'Daily question',
+                  onTap: () => context.push('/daily-question'),
+                ),
+              ],
+            ),
+          ),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
             child: Row(
               children: [
                 const Icon(
@@ -334,6 +360,31 @@ class _StrategyScreenState extends ConsumerState<StrategyScreen> {
           ),
         ],
       ),
+    );
+  }
+}
+
+class _LearningShortcut extends StatelessWidget {
+  final IconData icon;
+  final String label;
+  final VoidCallback onTap;
+
+  const _LearningShortcut({
+    required this.icon,
+    required this.label,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return ActionChip(
+      avatar: Icon(icon, size: 16, color: const Color(0xFF6EE7B7)),
+      label: Text(label),
+      onPressed: onTap,
+      backgroundColor: const Color(0xFF1E293B),
+      side: const BorderSide(color: Color(0xFF334155)),
+      labelStyle: const TextStyle(color: Colors.white70, fontSize: 12),
+      visualDensity: VisualDensity.compact,
     );
   }
 }
@@ -1493,6 +1544,7 @@ class _StrategyCard extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    final korean = (ref.watch(languageProvider).value ?? 'en') == 'ko';
     final marketRequest = StrategySnapshotMarketRequest(
       strategyName: strategy.name,
       marketFilter: marketFilter,
@@ -1757,14 +1809,15 @@ class _StrategyCard extends ConsumerWidget {
                   return Column(
                     children: [
                       if (unrankedOnly)
-                        const Padding(
-                          padding: EdgeInsets.fromLTRB(16, 12, 16, 4),
-                          child: Text(
-                            '실지표가 없어 순위를 매기지 않았습니다. 가격만 확인된 종목은 지표 없음으로 표시합니다.',
-                            style: TextStyle(
-                              color: Color(0xFFFDBA74),
-                              fontSize: 12,
-                              height: 1.4,
+                        Padding(
+                          padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
+                          child: EmptyMetricChip(
+                            label: korean
+                                ? '지표 없음 · 왜 순서가 없나요'
+                                : 'No metric · why this row is unranked',
+                            explanation: EmptyMetricHelp.forUnrankedRow(
+                              ticker: snapshot.current.first.ticker,
+                              korean: korean,
                             ),
                           ),
                         ),
@@ -1777,6 +1830,7 @@ class _StrategyCard extends ConsumerWidget {
                             onToggle: () => onToggleWatch(stock.ticker),
                             insight: insightMap[stock.ticker.toUpperCase()],
                             isInsightLoading: insightsLoading,
+                            korean: korean,
                           ),
                         ),
                     ],
@@ -1811,6 +1865,7 @@ class _StockRow extends StatelessWidget {
   final VoidCallback onToggle;
   final StockInsightViewModel? insight;
   final bool isInsightLoading;
+  final bool korean;
 
   const _StockRow({
     required this.stock,
@@ -1819,97 +1874,155 @@ class _StockRow extends StatelessWidget {
     required this.onToggle,
     required this.insight,
     required this.isInsightLoading,
+    required this.korean,
   });
 
   @override
   Widget build(BuildContext context) {
     final displayName = resolveInstrumentName(stock.ticker, stock.name);
+    final metricCells = stock.metricsKnown ? _metricCells() : const <Widget>[];
 
-    return InkWell(
-      onTap: onOpenDetails,
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 9),
-        child: Row(
-          children: [
-            Container(
-              width: 26,
-              height: 26,
-              decoration: BoxDecoration(
-                color: const Color(0xFF1E293B),
-                borderRadius: BorderRadius.circular(13),
-              ),
-              child: Center(
-                child: Text(
-                  stock.ranked ? '#${stock.rank}' : '–',
-                  style: const TextStyle(color: Colors.white54, fontSize: 10),
-                ),
-              ),
-            ),
-            const SizedBox(width: 10),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    displayName,
-                    style: const TextStyle(
-                      color: Colors.white,
-                      fontWeight: FontWeight.bold,
-                      fontSize: 13,
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 9),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          InkWell(
+            onTap: onOpenDetails,
+            child: Row(
+              children: [
+                Container(
+                  width: 26,
+                  height: 26,
+                  decoration: BoxDecoration(
+                    color: const Color(0xFF1E293B),
+                    borderRadius: BorderRadius.circular(13),
+                  ),
+                  child: Center(
+                    child: Text(
+                      stock.ranked ? '#${stock.rank}' : '–',
+                      style: const TextStyle(
+                        color: Colors.white54,
+                        fontSize: 10,
+                      ),
                     ),
                   ),
-                  Text(
-                    stock.ticker,
-                    style: const TextStyle(color: Colors.white54, fontSize: 10),
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                  const SizedBox(height: 2),
-                  Text(
-                    !stock.ranked
-                        ? missingMetricLabel
-                        : isInsightLoading
-                            ? StorePolicy.isPersonalMode
-                                ? '지표 설명 생성 중...'
-                                : '전략 기준 설명 생성 중...'
-                            : insight?.compactSummary ??
-                                '점수 ${stock.score.toStringAsFixed(1)} 기준으로 정렬된 종목입니다.',
-                    style: const TextStyle(color: Colors.white30, fontSize: 10),
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                ],
-              ),
-            ),
-            Text(
-              formatMarketPrice(stock.ticker, stock.price),
-              style: const TextStyle(color: Colors.white70, fontSize: 12),
-            ),
-            const SizedBox(width: 8),
-            Text(
-              stock.score.toStringAsFixed(1),
-              style: const TextStyle(
-                color: Color(0xFF10B981),
-                fontSize: 10,
-                fontWeight: FontWeight.bold,
-              ),
-            ),
-            const SizedBox(width: 8),
-            GestureDetector(
-              behavior: HitTestBehavior.opaque,
-              onTap: onToggle,
-              child: Padding(
-                padding: const EdgeInsets.all(4),
-                child: Icon(
-                  isWatched ? Icons.star_rounded : Icons.star_border_rounded,
-                  color: isWatched ? const Color(0xFFF59E0B) : Colors.white30,
-                  size: 22,
                 ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        displayName,
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontWeight: FontWeight.bold,
+                          fontSize: 13,
+                        ),
+                      ),
+                      Text(
+                        stock.ticker,
+                        style: const TextStyle(
+                          color: Colors.white54,
+                          fontSize: 10,
+                        ),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                      if (stock.ranked) ...[
+                        const SizedBox(height: 2),
+                        Text(
+                          isInsightLoading
+                              ? StorePolicy.isPersonalMode
+                                  ? '지표 설명 생성 중...'
+                                  : '전략 기준 설명 생성 중...'
+                              : insight?.compactSummary ??
+                                  '점수 ${stock.score.toStringAsFixed(1)} 기준으로 정렬된 종목입니다.',
+                          style: const TextStyle(
+                            color: Colors.white30,
+                            fontSize: 10,
+                          ),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ],
+                    ],
+                  ),
+                ),
+                Text(
+                  formatMarketPrice(stock.ticker, stock.price),
+                  style: const TextStyle(color: Colors.white70, fontSize: 12),
+                ),
+                const SizedBox(width: 8),
+                Text(
+                  stock.score.toStringAsFixed(1),
+                  style: const TextStyle(
+                    color: Color(0xFF10B981),
+                    fontSize: 10,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+                const SizedBox(width: 8),
+                GestureDetector(
+                  behavior: HitTestBehavior.opaque,
+                  onTap: onToggle,
+                  child: Padding(
+                    padding: const EdgeInsets.all(4),
+                    child: Icon(
+                      isWatched ? Icons.star_rounded : Icons.star_border_rounded,
+                      color:
+                          isWatched ? const Color(0xFFF59E0B) : Colors.white30,
+                      size: 22,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          if (!stock.ranked) ...[
+            const SizedBox(height: 6),
+            EmptyMetricChip(
+              label: korean ? '지표 없음 · 이유 보기' : 'No metric · why',
+              explanation: EmptyMetricHelp.forUnrankedRow(
+                ticker: stock.ticker,
+                korean: korean,
               ),
             ),
           ],
-        ),
+          if (metricCells.isNotEmpty) ...[
+            const SizedBox(height: 6),
+            Wrap(spacing: 6, runSpacing: 4, children: metricCells),
+          ],
+        ],
       ),
+    );
+  }
+
+  List<Widget> _metricCells() {
+    return [
+      _metricCell('per', stock.per, suffix: ''),
+      _metricCell('roe', stock.roe, suffix: '%'),
+      _metricCell('dividend', stock.dividendYield, suffix: '%'),
+    ];
+  }
+
+  Widget _metricCell(String key, double? value, {required String suffix}) {
+    final label = EmptyMetricHelp.labelFor(key);
+    final missing = value == null || value <= 0;
+    if (missing) {
+      return EmptyMetricChip(
+        label: '$label · ${korean ? missingMetricLabel : 'no metric'}',
+        explanation: EmptyMetricHelp.forRankingCell(
+          ticker: stock.ticker,
+          metricKey: key,
+          korean: korean,
+        ),
+      );
+    }
+    return Text(
+      '$label ${value.toStringAsFixed(1)}$suffix',
+      style: const TextStyle(color: Colors.white54, fontSize: 10),
     );
   }
 }

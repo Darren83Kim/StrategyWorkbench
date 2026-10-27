@@ -10,6 +10,7 @@ import 'package:strategy_workbench/core/providers/filter_providers.dart';
 import 'package:strategy_workbench/core/providers/language_provider.dart';
 import 'package:strategy_workbench/core/providers/snapshot_providers.dart';
 import 'package:strategy_workbench/core/providers/stock_detail_providers.dart';
+import 'package:strategy_workbench/features/learning/presentation/learning_tools_card.dart';
 import 'package:strategy_workbench/shared/widgets/glass_container.dart';
 
 class DashboardScreen extends ConsumerStatefulWidget {
@@ -106,6 +107,8 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
       body: ListView(
         padding: const EdgeInsets.all(16),
         children: [
+          const LearningToolsCard(),
+          const SizedBox(height: 16),
           if (activeStrategyNameAsync.isLoading)
             _BriefLoadingCard(s: s)
           else if (activeStrategy == null)
