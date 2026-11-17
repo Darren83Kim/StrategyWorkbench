@@ -1,8 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 import 'package:strategy_workbench/core/providers/language_provider.dart';
 import 'package:strategy_workbench/core/providers/learning_streak_providers.dart';
+import 'package:strategy_workbench/core/providers/study_reminder_providers.dart';
 import 'package:strategy_workbench/features/learning/domain/daily_question.dart';
+import 'package:strategy_workbench/features/learning/domain/study_reminder.dart';
 import 'package:strategy_workbench/shared/widgets/glass_container.dart';
 
 class DailyQuestionScreen extends ConsumerStatefulWidget {
@@ -20,7 +23,15 @@ class _DailyQuestionScreenState extends ConsumerState<DailyQuestionScreen> {
   Widget build(BuildContext context) {
     final korean = (ref.watch(languageProvider).value ?? 'en') == 'ko';
     final progress = ref.watch(learningStreakProvider);
+    final reminder = ref.watch(studyReminderProvider).value;
     final question = DailyQuestionBank.forDate(DateTime.now(), korean: korean);
+    final reminderOn = reminder?.enabled ?? false;
+    final reminderLabel = reminderOn
+        ? StudyReminderCopy.openSettingsWhenOn(
+            korean: korean,
+            time: formatStudyReminderTime(reminder!.hour, reminder.minute),
+          )
+        : StudyReminderCopy.openSettingsWhenOff(korean: korean);
 
     return Scaffold(
       backgroundColor: const Color(0xFF0F172A),
@@ -61,12 +72,27 @@ class _DailyQuestionScreenState extends ConsumerState<DailyQuestionScreen> {
                       const SizedBox(height: 8),
                       Text(
                         korean
-                            ? '하루 한 문제를 마치면 연속이 이어집니다. 기록은 이 기기에만 있고 계정은 없습니다.'
-                            : 'Finishing one question continues the streak. The record stays on this device. There is no account.',
+                            ? '하루 한 문제를 마치면 연속이 이어집니다. 날짜는 한국 시간(서울)이고, 기록은 이 기기에만 있습니다.'
+                            : 'Finishing one question continues the streak. Days follow Korea (Seoul) time, and the record stays on this device.',
                         style: const TextStyle(
                           color: Colors.white54,
                           fontSize: 12,
                           height: 1.4,
+                        ),
+                      ),
+                      Align(
+                        alignment: Alignment.centerLeft,
+                        child: TextButton(
+                          key: const Key('open-learning-settings'),
+                          onPressed: () => context.push('/learning-settings'),
+                          style: TextButton.styleFrom(
+                            foregroundColor: const Color(0xFF93C5FD),
+                            padding: EdgeInsets.zero,
+                          ),
+                          child: Text(
+                            reminderLabel,
+                            style: const TextStyle(fontSize: 12),
+                          ),
                         ),
                       ),
                     ],
@@ -113,18 +139,49 @@ class _DailyQuestionScreenState extends ConsumerState<DailyQuestionScreen> {
                         Text(
                           done && _selected == null
                               ? (korean
-                                    ? '오늘 문제는 이미 마쳤습니다'
-                                    : 'Today’s question is done')
+                                  ? '오늘 문제는 이미 마쳤습니다'
+                                  : 'Today’s question is done')
                               : (_selected == question.answerIndex
-                                    ? (korean ? '맞았습니다' : 'Correct')
-                                    : (korean
-                                          ? '다시 읽어 볼 부분'
-                                          : 'Read this again')),
+                                  ? (korean ? '맞았습니다' : 'Correct')
+                                  : (korean
+                                      ? '다시 읽어 볼 부분'
+                                      : 'Read this again')),
                           style: const TextStyle(
                             color: Color(0xFF93C5FD),
                             fontWeight: FontWeight.w800,
                           ),
                         ),
+                        const SizedBox(height: 8),
+                        Text(
+                          korean ? '정답' : 'Answer',
+                          style: const TextStyle(
+                            color: Colors.white38,
+                            fontSize: 11,
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                        const SizedBox(height: 4),
+                        Text(
+                          question.answer,
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontSize: 13,
+                            height: 1.4,
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                        if (question.formula.isNotEmpty) ...[
+                          const SizedBox(height: 10),
+                          Text(
+                            question.formula,
+                            style: const TextStyle(
+                              color: Color(0xFF6EE7B7),
+                              fontSize: 13,
+                              height: 1.4,
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                        ],
                         const SizedBox(height: 8),
                         Text(
                           question.explanation,
@@ -134,6 +191,17 @@ class _DailyQuestionScreenState extends ConsumerState<DailyQuestionScreen> {
                             height: 1.5,
                           ),
                         ),
+                        if (question.studyNote.isNotEmpty) ...[
+                          const SizedBox(height: 8),
+                          Text(
+                            question.studyNote,
+                            style: const TextStyle(
+                              color: Colors.white54,
+                              fontSize: 12,
+                              height: 1.45,
+                            ),
+                          ),
+                        ],
                       ],
                     ),
                   ),
@@ -167,10 +235,10 @@ class _ChoiceButton extends StatelessWidget {
     final color = !revealed
         ? const Color(0xFF334155)
         : correct
-        ? const Color(0xFF10B981)
-        : selected
-        ? const Color(0xFFF87171)
-        : const Color(0xFF334155);
+            ? const Color(0xFF10B981)
+            : selected
+                ? const Color(0xFFF87171)
+                : const Color(0xFF334155);
     return OutlinedButton(
       onPressed: onPressed,
       style: OutlinedButton.styleFrom(

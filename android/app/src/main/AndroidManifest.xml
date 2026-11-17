@@ -3,12 +3,11 @@
 
     <!-- 네트워크 (API 호출 필수) -->
     <uses-permission android:name="android.permission.INTERNET"/>
-    <!-- 알림 권한 (Android 13+, flutter_local_notifications) -->
+    <!-- 알림 권한 (Android 13+). 학습 리마인더를 켤 때만 런타임으로 요청한다. -->
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS"/>
-    <!-- WorkManager 백그라운드 작업 -->
+    <!-- WorkManager와 학습 리마인더의 재부팅 복구. 정확한 알람 권한은 쓰지 않는다. -->
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED"/>
     <uses-permission android:name="android.permission.WAKE_LOCK"/>
-    <uses-permission android:name="android.permission.SCHEDULE_EXACT_ALARM"/>
 
     <application
         android:label="Strategy Workbench"
@@ -32,6 +31,23 @@
                 <category android:name="android.intent.category.LAUNCHER"/>
             </intent-filter>
         </activity>
+
+        <!-- 학습 리마인더는 inexact 알람만 쓴다.
+             SCHEDULE_EXACT_ALARM / USE_EXACT_ALARM 은 선언하지 않는다.
+             부트 리시버가 재시작 뒤 같은 예약을 복구한다. -->
+        <receiver
+            android:exported="false"
+            android:name="com.dexterous.flutterlocalnotifications.ScheduledNotificationReceiver" />
+        <receiver
+            android:exported="false"
+            android:name="com.dexterous.flutterlocalnotifications.ScheduledNotificationBootReceiver">
+            <intent-filter>
+                <action android:name="android.intent.action.BOOT_COMPLETED"/>
+                <action android:name="android.intent.action.MY_PACKAGE_REPLACED"/>
+                <action android:name="android.intent.action.QUICKBOOT_POWERON" />
+                <action android:name="com.htc.intent.action.QUICKBOOT_POWERON"/>
+            </intent-filter>
+        </receiver>
 
         <!-- Flutter 임베딩 버전 -->
         <meta-data

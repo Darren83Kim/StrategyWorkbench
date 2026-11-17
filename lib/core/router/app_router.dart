@@ -12,6 +12,7 @@ import 'package:strategy_workbench/features/strategy/presentation/filter_creatio
 import 'package:strategy_workbench/features/strategy/presentation/strategy_screen.dart';
 import 'package:strategy_workbench/features/portfolio/presentation/portfolio_screen.dart';
 import 'package:strategy_workbench/features/learning/presentation/daily_question_screen.dart';
+import 'package:strategy_workbench/features/learning/presentation/learning_settings_screen.dart';
 import 'package:strategy_workbench/features/learning/presentation/metric_calculator_screen.dart';
 import 'package:strategy_workbench/features/learning/presentation/metric_dictionary_screen.dart';
 import 'package:strategy_workbench/features/learning/presentation/preset_walkthrough_screen.dart';
@@ -98,6 +99,11 @@ final appRouter = GoRouter(
       path: '/daily-question',
       parentNavigatorKey: _rootNavigatorKey,
       builder: (context, state) => const DailyQuestionScreen(),
+    ),
+    GoRoute(
+      path: '/learning-settings',
+      parentNavigatorKey: _rootNavigatorKey,
+      builder: (context, state) => const LearningSettingsScreen(),
     ),
     GoRoute(
       path: '/analysis-lab',
