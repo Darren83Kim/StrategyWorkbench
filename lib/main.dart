@@ -15,8 +15,11 @@ import 'package:strategy_workbench/core/services/crash_reporting.dart';
 import 'package:strategy_workbench/features/onboarding/onboarding_controller.dart';
 import 'package:strategy_workbench/core/network/hive_service.dart';
 import 'package:strategy_workbench/core/providers/filter_providers.dart';
+import 'package:strategy_workbench/core/providers/study_reminder_providers.dart';
 import 'package:strategy_workbench/core/services/alert_runtime_service.dart';
 import 'package:strategy_workbench/core/services/background_service.dart';
+import 'package:strategy_workbench/core/services/study_reminder_scheduler.dart';
+import 'package:strategy_workbench/features/learning/domain/study_reminder.dart';
 import 'package:strategy_workbench/features/strategy/data/repositories/hybrid_stock_repository.dart';
 import 'package:strategy_workbench/features/strategy/data/repositories/kor_investment_repository.dart';
 import 'package:strategy_workbench/features/strategy/domain/services/data_sync_service.dart';
@@ -50,6 +53,11 @@ Future<void> main() async {
   }
 
   await onboardingController.load();
+  StudyReminderNavigation.onTap = (payload) {
+    if (payload == studyReminderPayload) {
+      appRouter.push('/daily-question');
+    }
+  };
 
   // 2. Hive 초기화 (runApp 전에 반드시 완료해야 함 - providers가 즉시 사용)
   final hiveService = HiveService();
@@ -163,11 +171,29 @@ Future<void> _syncStocksAsync(HiveService hiveService) async {
   }
 }
 
-class MyApp extends ConsumerWidget {
+class MyApp extends ConsumerStatefulWidget {
   const MyApp({super.key});
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<MyApp> createState() => _MyAppState();
+}
+
+class _MyAppState extends ConsumerState<MyApp> {
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) {
+        return;
+      }
+      unawaited(
+        ref.read(studyReminderProvider.notifier).restoreScheduledReminder(),
+      );
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
     return MaterialApp.router(
       title: 'Strategy Workbench',
       theme: AppTheme.darkTheme,

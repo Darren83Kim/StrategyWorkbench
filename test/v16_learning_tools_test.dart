@@ -110,13 +110,13 @@ void main() {
     test(
       'uses one question per day and keeps the same id in both languages',
       () {
-        final day = DateTime(2026, 10, 27);
+        final day = seoulWallClock(2026, 10, 27, 9);
         final korean = DailyQuestionBank.forDate(day);
         final english = DailyQuestionBank.forDate(day, korean: false);
         expect(korean.id, english.id);
         expect(
           DailyQuestionBank.forDate(day).id,
-          DailyQuestionBank.forDate(DateTime(2026, 10, 27, 23, 30)).id,
+          DailyQuestionBank.forDate(seoulWallClock(2026, 10, 27, 23, 30)).id,
         );
 
         for (final question in [
@@ -133,27 +133,27 @@ void main() {
       },
     );
 
-    test('counts one completion per local day', () {
+    test('counts one completion per Seoul calendar day', () {
       const start = LearningStreakSnapshot.empty;
       final first = LearningProgress.applyAnswer(
         current: start,
         questionId: 'per-meaning',
-        now: DateTime(2026, 10, 27, 9),
+        now: seoulWallClock(2026, 10, 27, 9),
       );
       final sameDay = LearningProgress.applyAnswer(
         current: first,
         questionId: 'roe-meaning',
-        now: DateTime(2026, 10, 27, 21),
+        now: seoulWallClock(2026, 10, 27, 21),
       );
       final nextDay = LearningProgress.applyAnswer(
         current: sameDay,
         questionId: 'dividend-meaning',
-        now: DateTime(2026, 10, 28, 8),
+        now: seoulWallClock(2026, 10, 28, 8),
       );
       final afterGap = LearningProgress.applyAnswer(
         current: nextDay,
         questionId: 'rank-change',
-        now: DateTime(2026, 10, 30, 8),
+        now: seoulWallClock(2026, 10, 30, 8),
       );
 
       expect(first.streak, 1);

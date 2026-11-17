@@ -3,6 +3,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:strategy_workbench/core/providers/language_provider.dart';
 import 'package:strategy_workbench/core/providers/learning_streak_providers.dart';
+import 'package:strategy_workbench/core/providers/study_reminder_providers.dart';
+import 'package:strategy_workbench/features/learning/domain/study_reminder.dart';
 import 'package:strategy_workbench/shared/widgets/glass_container.dart';
 
 class LearningToolsCard extends ConsumerWidget {
@@ -11,10 +13,12 @@ class LearningToolsCard extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final korean = (ref.watch(languageProvider).value ?? 'en') == 'ko';
+    final reminder = ref.watch(studyReminderProvider).value;
+    final reminderOn = reminder?.enabled ?? false;
     final streak = ref.watch(learningStreakProvider).value?.streak ?? 0;
     final done =
         ref.watch(learningStreakProvider).value?.completedOn(DateTime.now()) ??
-        false;
+            false;
 
     return GlassContainer(
       child: Padding(
@@ -26,11 +30,11 @@ class LearningToolsCard extends ConsumerWidget {
               title: korean ? '오늘의 한 문제' : 'Daily question',
               subtitle: korean
                   ? (done
-                        ? '오늘 완료 · 연속 학습 $streak일'
-                        : '연속 학습 $streak일 · 기기 안에만 저장')
+                      ? '오늘 완료 · 연속 학습 $streak일'
+                      : '연속 학습 $streak일 · 기기 안에만 저장')
                   : (done
-                        ? 'Done today · streak $streak'
-                        : 'Streak $streak · stored on this device'),
+                      ? 'Done today · streak $streak'
+                      : 'Streak $streak · stored on this device'),
               onTap: () => context.push('/daily-question'),
             ),
             _ToolRow(
@@ -42,6 +46,20 @@ class LearningToolsCard extends ConsumerWidget {
                   ? '숫자를 넣어 공식을 확인합니다'
                   : 'Type numbers and read the formulas',
               onTap: () => context.push('/metric-calculator'),
+            ),
+            _ToolRow(
+              icon: Icons.notifications_none_rounded,
+              title: StudyReminderCopy.settingsEntryTitle(korean: korean),
+              subtitle: reminderOn
+                  ? StudyReminderCopy.openSettingsWhenOn(
+                      korean: korean,
+                      time: formatStudyReminderTime(
+                        reminder!.hour,
+                        reminder.minute,
+                      ),
+                    )
+                  : StudyReminderCopy.settingsEntrySubtitle(korean: korean),
+              onTap: () => context.push('/learning-settings'),
             ),
             _ToolRow(
               icon: Icons.route_outlined,
